@@ -12,18 +12,20 @@
   <div class="header-inner">
     <h1>☀️ Solar Tracker</h1>
     <p class="tagline">Where the sun is, how high it gets, and what that means — for any place, any day.</p>
+    <button id="scenic-toggle" class="ghost-btn" type="button" aria-pressed="false" title="Ambient sky panel that changes with the season and time of day">✨ Scenic</button>
     <button id="theme-toggle" class="ghost-btn" type="button" aria-label="Toggle color theme">◐ Theme</button>
   </div>
 </header>
 
 <main>
+  <section id="scene-panel" class="scene-panel" hidden aria-label="Scenic sky view"></section>
   <!-- Controls: one row above everything they scope -->
   <section class="controls card" aria-label="Location and time controls">
-    <div class="control-group">
-      <label for="city-select">Place</label>
-      <select id="city-select">
-        <option value="">Custom coordinates…</option>
-      </select>
+    <div class="control-group control-search">
+      <label for="city-search">Search city</label>
+      <input id="city-search" type="search" placeholder="e.g. Denver, Tokyo, Nairobi…" autocomplete="off"
+             role="combobox" aria-expanded="false" aria-controls="city-results" aria-autocomplete="list">
+      <ul id="city-results" class="city-results" role="listbox" hidden></ul>
     </div>
     <div class="control-group">
       <label for="lat-input">Latitude</label>

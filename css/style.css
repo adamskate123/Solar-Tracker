@@ -134,9 +134,73 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   cursor: pointer;
 }
 .ghost-btn:hover { background: var(--grid); }
+.ghost-btn-active { border-color: var(--accent); color: var(--accent); }
 .live-label { display: flex; gap: 6px; align-items: center; font-size: 0.875rem; color: var(--text-secondary); }
 .live-label input { accent-color: var(--accent); }
 .control-note { flex-basis: 100%; margin: 0; font-size: 0.8rem; color: var(--muted); }
+
+/* City search */
+.control-search { position: relative; min-width: 210px; }
+.control-search input { width: 100%; }
+.city-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 4px 0 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+  max-height: 280px;
+  overflow-y: auto;
+}
+.city-results li {
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.city-results li:hover,
+.city-results li[aria-selected="true"] { background: var(--grid); }
+.city-results .city-name { color: var(--text-primary); font-size: 0.875rem; }
+.city-results .city-sub { color: var(--muted); font-size: 0.75rem; }
+.city-results .city-empty { color: var(--muted); font-size: 0.8rem; cursor: default; }
+.city-results .city-empty:hover { background: none; }
+
+/* Scenic panel */
+.scene-panel {
+  position: relative;
+  margin: 12px 0 0;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  line-height: 0;
+}
+.scene-panel svg { width: 100%; height: clamp(160px, 26vw, 260px); display: block; }
+.scene-caption {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.94);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  font-size: 0.8rem;
+  pointer-events: none;
+  background: rgba(10, 14, 20, 0.32);
+  padding: 4px 12px;
+  border-radius: 9px;
+  backdrop-filter: blur(3px);
+}
+.scene-caption .scene-time { font-size: 1.15rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* Stat tiles */
 .tiles {

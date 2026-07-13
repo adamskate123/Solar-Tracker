@@ -8,6 +8,7 @@ import {
   daysInMonth,
 } from './solar.js';
 import { renderLineChart, renderSkyDome } from './charts.js';
+import { renderScene } from './scene.js';
 
 /* ---------- presets ---------- */
 
@@ -111,25 +112,47 @@ const state = {
   },
   minutes: initialNow.getHours() * 60 + initialNow.getMinutes(),
   live: false,
+  scenic: false,
+  placeLabel: '',
 };
+
+/* Restore location, theme and scenic preference from the last visit. */
+const STORE_KEY = 'solar-tracker-v1';
+try {
+  const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+  if (saved && Number.isFinite(saved.lat) && Number.isFinite(saved.lon)) {
+    state.lat = saved.lat;
+    state.lon = saved.lon;
+    state.tzZone = saved.tzZone ?? null;
+    state.tz = state.tzZone ? zoneOffsetHours(state.tzZone, initialNow) : (Number.isFinite(saved.tz) ? saved.tz : state.tz);
+    state.scenic = !!saved.scenic;
+    state.placeLabel = saved.placeLabel || '';
+    if (saved.theme) document.documentElement.dataset.theme = saved.theme;
+  }
+} catch { /* corrupted storage: start fresh */ }
+
+function persist() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      lat: state.lat, lon: state.lon, tz: state.tz, tzZone: state.tzZone,
+      scenic: state.scenic, placeLabel: state.placeLabel,
+      theme: document.documentElement.dataset.theme || null,
+    }));
+  } catch { /* storage unavailable (private mode etc.) */ }
+}
 
 /* ---------- element handles ---------- */
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  city: $('city-select'), lat: $('lat-input'), lon: $('lon-input'), tz: $('tz-input'),
+  search: $('city-search'), results: $('city-results'),
+  lat: $('lat-input'), lon: $('lon-input'), tz: $('tz-input'),
   date: $('date-input'), slider: $('time-slider'), timeDisplay: $('time-display'),
   geoBtn: $('geo-btn'), nowBtn: $('now-btn'), liveToggle: $('live-toggle'),
   geoStatus: $('geo-status'), themeToggle: $('theme-toggle'),
   explain: $('explain'), dayChartSub: $('day-chart-sub'),
+  scenicToggle: $('scenic-toggle'), scenePanel: $('scene-panel'),
 };
-
-for (const c of CITIES) {
-  const opt = document.createElement('option');
-  opt.value = c.name;
-  opt.textContent = c.name;
-  els.city.appendChild(opt);
-}
 
 /* ---------- computation for one render ---------- */
 
@@ -421,7 +444,31 @@ function explainHTML(model) {
 
 /* ---------- render ---------- */
 
+function updateScene(model) {
+  els.scenePanel.hidden = !state.scenic;
+  els.scenicToggle.setAttribute('aria-pressed', String(state.scenic));
+  els.scenicToggle.classList.toggle('ghost-btn-active', state.scenic);
+  if (!state.scenic) return;
+  const { today } = model;
+  const elev = model.now.apparentElevation;
+  const sunNote = elev > -0.833
+    ? `sun ${fmtDeg(elev)} ${compassPoint(model.now.azimuth)}`
+    : today.polar === 'night' ? 'polar night'
+    : elev > -18 ? (state.minutes < today.solarNoon ? 'dawn twilight' : 'dusk twilight')
+    : 'night';
+  renderScene(els.scenePanel, {
+    elevation: model.now.apparentElevation,
+    azimuth: model.now.azimuth,
+    lat: state.lat,
+    month: state.date.month,
+    timeLabel: fmtClock(state.minutes),
+    dateLabel: `${MONTHS[state.date.month - 1]} ${state.date.day}${state.placeLabel ? ' · ' + state.placeLabel : ''}`,
+    sunNote,
+  });
+}
+
 function syncControls() {
+  els.search.value = state.placeLabel;
   els.lat.value = state.lat;
   els.lon.value = state.lon;
   els.tz.value = state.tz;
@@ -456,6 +503,7 @@ function render() {
 
   els.explain.innerHTML = explainHTML(model);
   els.timeDisplay.textContent = fmtClock(state.minutes);
+  updateScene(model);
 }
 
 /** Lighter path when only the time-of-day changed: skip year charts. */
@@ -467,6 +515,7 @@ function renderTimeOnly() {
   irrChart.update(irrConfig(model));
   els.explain.innerHTML = explainHTML(model);
   els.timeDisplay.textContent = fmtClock(state.minutes);
+  updateScene(model);
 }
 
 /* ---------- events ---------- */
@@ -480,16 +529,142 @@ function selectedDateAsUTC() {
   return new Date(Date.UTC(state.date.year, state.date.month - 1, state.date.day, 12));
 }
 
-els.city.addEventListener('change', () => {
-  const c = CITIES.find((x) => x.name === els.city.value);
-  if (!c) return;
-  state.lat = c.lat;
-  state.lon = c.lon;
-  state.tzZone = c.tz;
-  state.tz = zoneOffsetHours(c.tz, selectedDateAsUTC());
-  note('');
+/* ----- city search (Open-Meteo geocoding, built-in list as fallback) ----- */
+
+let searchItems = [];
+let searchIdx = -1;
+let searchTimer = null;
+let searchAbort = null;
+
+function applyPlace(place) {
+  state.lat = +place.lat.toFixed(4);
+  state.lon = +place.lon.toFixed(4);
+  state.tzZone = place.tzZone || null;
+  if (state.tzZone) state.tz = zoneOffsetHours(state.tzZone, selectedDateAsUTC());
+  state.placeLabel = place.name;
+  els.search.value = place.name;
+  closeResults();
+  note(place.tzZone ? '' :
+    'No time zone found for this place — check the UTC offset field.');
   syncControls();
   render();
+  persist();
+}
+
+function closeResults() {
+  els.results.hidden = true;
+  els.search.setAttribute('aria-expanded', 'false');
+  searchIdx = -1;
+}
+
+function showResults(items, emptyMsg) {
+  searchItems = items;
+  searchIdx = -1;
+  els.results.textContent = '';
+  if (!items.length) {
+    const li = document.createElement('li');
+    li.className = 'city-empty';
+    li.textContent = emptyMsg || 'No matches';
+    els.results.appendChild(li);
+  }
+  items.forEach((item, i) => {
+    const li = document.createElement('li');
+    li.setAttribute('role', 'option');
+    li.dataset.idx = i;
+    const name = document.createElement('span');
+    name.className = 'city-name';
+    name.textContent = item.name;
+    li.appendChild(name);
+    if (item.sub) {
+      const sub = document.createElement('span');
+      sub.className = 'city-sub';
+      sub.textContent = item.sub;
+      li.appendChild(sub);
+    }
+    li.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault(); // keep focus so blur doesn't close first
+      applyPlace(item);
+    });
+    els.results.appendChild(li);
+  });
+  els.results.hidden = false;
+  els.search.setAttribute('aria-expanded', 'true');
+}
+
+function localMatches(q) {
+  const needle = q.trim().toLowerCase();
+  return CITIES
+    .filter((c) => !needle || c.name.toLowerCase().includes(needle))
+    .slice(0, 8)
+    .map((c) => ({ name: c.name, sub: '', lat: c.lat, lon: c.lon, tzZone: c.tz }));
+}
+
+async function searchRemote(q) {
+  if (searchAbort) searchAbort.abort();
+  searchAbort = new AbortController();
+  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=en&format=json`;
+  const res = await fetch(url, { signal: searchAbort.signal });
+  if (!res.ok) throw new Error(`geocoding ${res.status}`);
+  const data = await res.json();
+  return (data.results || []).map((r) => ({
+    name: [r.name, r.admin1].filter(Boolean).join(', '),
+    sub: [r.country, `${r.latitude.toFixed(2)}°, ${r.longitude.toFixed(2)}°`].filter(Boolean).join(' · '),
+    lat: r.latitude,
+    lon: r.longitude,
+    tzZone: r.timezone || null,
+  }));
+}
+
+function runSearch() {
+  const q = els.search.value.trim();
+  if (q.length < 2) {
+    showResults(localMatches(q));
+    return;
+  }
+  searchRemote(q)
+    .then((items) => {
+      // merge in local presets that match, first, without duplicates
+      const locals = localMatches(q).filter(
+        (l) => !items.some((r) => Math.abs(r.lat - l.lat) < 0.2 && Math.abs(r.lon - l.lon) < 0.2)
+      );
+      showResults([...locals, ...items].slice(0, 8), 'No matches found');
+    })
+    .catch((err) => {
+      if (err.name === 'AbortError') return;
+      showResults(localMatches(q), 'No matches (offline — built-in cities only)');
+    });
+}
+
+els.search.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runSearch, 300);
+});
+els.search.addEventListener('focus', runSearch);
+els.search.addEventListener('blur', () => setTimeout(closeResults, 150));
+els.search.addEventListener('keydown', (ev) => {
+  if (els.results.hidden && (ev.key === 'ArrowDown' || ev.key === 'Enter')) {
+    runSearch();
+    return;
+  }
+  if (ev.key === 'Escape') { closeResults(); return; }
+  if (ev.key === 'Enter' && searchIdx < 0 && searchItems.length) {
+    ev.preventDefault();
+    applyPlace(searchItems[0]);
+    return;
+  }
+  if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp' && ev.key !== 'Enter') return;
+  ev.preventDefault();
+  if (ev.key === 'Enter') {
+    if (searchIdx >= 0 && searchItems[searchIdx]) applyPlace(searchItems[searchIdx]);
+    return;
+  }
+  const n = searchItems.length;
+  if (!n) return;
+  searchIdx = ev.key === 'ArrowDown'
+    ? (searchIdx + 1) % n
+    : (searchIdx - 1 + n) % n;
+  [...els.results.children].forEach((li, i) =>
+    li.setAttribute('aria-selected', i === searchIdx ? 'true' : 'false'));
 });
 
 function onCoordEdit() {
@@ -498,7 +673,8 @@ function onCoordEdit() {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
   state.lat = Math.max(-90, Math.min(90, lat));
   state.lon = Math.max(-180, Math.min(180, lon));
-  els.city.value = '';
+  state.placeLabel = '';
+  els.search.value = '';
   state.tzZone = null;
   const est = Math.round(state.lon / 15);
   if (est !== Math.round(state.tz)) {
@@ -507,6 +683,7 @@ function onCoordEdit() {
     note('');
   }
   render();
+  persist();
 }
 els.lat.addEventListener('change', onCoordEdit);
 els.lon.addEventListener('change', onCoordEdit);
@@ -517,6 +694,7 @@ els.tz.addEventListener('change', () => {
   state.tz = Math.max(-12, Math.min(14, tz));
   state.tzZone = null;
   render();
+  persist();
 });
 
 els.date.addEventListener('change', () => {
@@ -556,10 +734,12 @@ els.geoBtn.addEventListener('click', () => {
       state.lon = +pos.coords.longitude.toFixed(4);
       state.tzZone = browserZone;
       if (browserZone) state.tz = zoneOffsetHours(browserZone, selectedDateAsUTC());
-      els.city.value = '';
+      state.placeLabel = 'My location';
+      els.search.value = 'My location';
       note(`Using your location: ${state.lat}°, ${state.lon}°.`);
       syncControls();
       render();
+      persist();
     },
     (err) => note(`Couldn't get your location (${err.message}) — enter coordinates manually.`),
     { timeout: 10000 }
@@ -582,6 +762,13 @@ els.themeToggle.addEventListener('click', () => {
   const current = root.dataset.theme || (prefersDark ? 'dark' : 'light');
   root.dataset.theme = current === 'dark' ? 'light' : 'dark';
   render(); // markers/rings read the surface color at draw time in some browsers
+  persist();
+});
+
+els.scenicToggle.addEventListener('click', () => {
+  state.scenic = !state.scenic;
+  render();
+  persist();
 });
 
 /* ---------- boot ---------- */
