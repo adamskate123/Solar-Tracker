@@ -25,6 +25,13 @@ No accounts, no build step, no dependencies: open one HTML file and go.
 - **What it means** — plain-language, location-aware explanations of how sun
   angle drives the seasons, solar radiation, weather and climate at your
   latitude, and a suggested solar-panel tilt.
+- **City search** — type any city name to jump there; powered by the free
+  Open-Meteo geocoding API (with DST-correct time zones), falling back to a
+  built-in city list when offline.
+- **✨ Scenic mode** — an ambient sky panel whose colors track the sun through
+  night, twilight, golden hour and day, with a landscape that changes with the
+  season at your hemisphere (snow in winter, autumn golds, tropical greens…).
+  Your location, theme and scenic preference are remembered between visits.
 
 Every chart has hover tooltips (mouse or keyboard arrows), a data-table view,
 and full light/dark theming.
@@ -41,7 +48,7 @@ Opening `index.html` directly also works in browsers that allow ES modules
 from `file://` — if yours doesn't, use the one-liner above.
 
 - **📍 My location** uses browser geolocation (needs HTTPS or localhost).
-- **Place** offers preset cities with automatic, DST-aware time zones.
+- **Search city** finds any place by name and sets its time zone automatically.
 - For **custom coordinates**, set the UTC offset yourself — the app shows a
   suggested offset estimated from the longitude.
 - Drag the **time slider** to scrub through the day; **⏱ Now** jumps to the
@@ -64,7 +71,8 @@ index.html        page structure
 css/style.css     theme tokens (light/dark) and layout
 js/solar.js       astronomy: sun position, rise/set, air mass, irradiance
 js/charts.js      dependency-free SVG charts (line + polar sky dome)
-js/app.js         UI state, presets, geolocation, explanations
+js/scene.js       scenic mode: sky palette, seasons, landscape renderer
+js/app.js         UI state, city search, geolocation, explanations
 tests/            node:test suite for the astronomy math
 ```
 
