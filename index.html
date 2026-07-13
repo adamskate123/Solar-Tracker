@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solar Tracker — sun position, inclination &amp; radiation</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='.9em' font-size='90'&gt;☀️&lt;/text&gt;&lt;/svg&gt;">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-inner">
+    <h1>☀️ Solar Tracker</h1>
+    <p class="tagline">Where the sun is, how high it gets, and what that means — for any place, any day.</p>
+    <button id="theme-toggle" class="ghost-btn" type="button" aria-label="Toggle color theme">◐ Theme</button>
+  </div>
+</header>
+
+<main>
+  <!-- Controls: one row above everything they scope -->
+  <section class="controls card" aria-label="Location and time controls">
+    <div class="control-group">
+      <label for="city-select">Place</label>
+      <select id="city-select">
+        <option value="">Custom coordinates…</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label for="lat-input">Latitude</label>
+      <input id="lat-input" type="number" min="-90" max="90" step="0.0001" value="40.7128">
+    </div>
+    <div class="control-group">
+      <label for="lon-input">Longitude</label>
+      <input id="lon-input" type="number" min="-180" max="180" step="0.0001" value="-74.0060">
+    </div>
+    <div class="control-group">
+      <label for="tz-input">UTC offset (h)</label>
+      <input id="tz-input" type="number" min="-12" max="14" step="0.25" value="-5">
+    </div>
+    <div class="control-group">
+      <label for="date-input">Date</label>
+      <input id="date-input" type="date">
+    </div>
+    <div class="control-group control-actions">
+      <label>&nbsp;</label>
+      <div class="btn-row">
+        <button id="geo-btn" class="ghost-btn" type="button" title="Use browser geolocation">📍 My location</button>
+        <button id="now-btn" class="ghost-btn" type="button" title="Jump to the current date and time">⏱ Now</button>
+        <label class="live-label"><input id="live-toggle" type="checkbox"> Track live</label>
+      </div>
+    </div>
+    <div class="control-group control-time">
+      <label for="time-slider">Local time <strong id="time-display">12:00</strong></label>
+      <input id="time-slider" type="range" min="0" max="1439" step="1" value="720">
+    </div>
+    <p id="geo-status" class="control-note" hidden></p>
+  </section>
+
+  <!-- Stat tiles -->
+  <section class="tiles" aria-label="Current solar facts">
+    <div class="tile"><span class="tile-label">Sun elevation</span><span class="tile-value" id="stat-elevation">–</span><span class="tile-sub" id="stat-elevation-sub"></span></div>
+    <div class="tile"><span class="tile-label">Sun azimuth</span><span class="tile-value" id="stat-azimuth">–</span><span class="tile-sub" id="stat-azimuth-sub"></span></div>
+    <div class="tile tile-hero"><span class="tile-label">Max elevation today</span><span class="tile-value" id="stat-max">–</span><span class="tile-sub" id="stat-max-sub"></span></div>
+    <div class="tile"><span class="tile-label">Sunrise</span><span class="tile-value" id="stat-sunrise">–</span><span class="tile-sub" id="stat-sunrise-sub"></span></div>
+    <div class="tile"><span class="tile-label">Sunset</span><span class="tile-value" id="stat-sunset">–</span><span class="tile-sub" id="stat-sunset-sub"></span></div>
+    <div class="tile"><span class="tile-label">Day length</span><span class="tile-value" id="stat-daylength">–</span><span class="tile-sub" id="stat-daylength-sub"></span></div>
+    <div class="tile"><span class="tile-label">Clear-sky radiation now</span><span class="tile-value" id="stat-ghi">–</span><span class="tile-sub" id="stat-ghi-sub"></span></div>
+    <div class="tile"><span class="tile-label">Clear-sky energy today</span><span class="tile-value" id="stat-insolation">–</span><span class="tile-sub" id="stat-insolation-sub"></span></div>
+  </section>
+
+  <!-- Charts -->
+  <section class="charts-grid">
+    <div class="card chart-card">
+      <h2>Sun path across the sky</h2>
+      <p class="chart-sub">Looking down on the sky dome: center is straight up, rim is the horizon. Dots mark each hour.</p>
+      <div id="dome-chart"></div>
+    </div>
+    <div class="card chart-card">
+      <h2>Sun elevation through the day</h2>
+      <p class="chart-sub" id="day-chart-sub">Selected day vs. the year's extremes at this location.</p>
+      <div id="day-chart"></div>
+    </div>
+    <div class="card chart-card">
+      <h2>Clear-sky solar radiation today</h2>
+      <p class="chart-sub">Estimated global horizontal irradiance with no clouds (idealized).</p>
+      <div id="irradiance-chart"></div>
+    </div>
+    <div class="card chart-card">
+      <h2>Maximum sun elevation through the year</h2>
+      <p class="chart-sub">The sun's height at solar noon for every day of the year.</p>
+      <div id="year-chart"></div>
+    </div>
+    <div class="card chart-card">
+      <h2>Day length through the year</h2>
+      <p class="chart-sub">Hours of daylight (sunrise to sunset) for every day of the year.</p>
+      <div id="daylength-chart"></div>
+    </div>
+    <div class="card chart-card">
+      <h2>What this means here</h2>
+      <div id="explain" class="explain"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <p>Sun positions use the NOAA solar equations (≈0.01° accuracy, 1900–2100). Radiation figures are idealized
+  <em>clear-sky</em> estimates (Kasten–Young air mass, Meinel attenuation) — clouds, haze and altitude will change real values.
+  Times are local to the UTC offset shown in the controls; adjust it if you change locations across time zones.</p>
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
