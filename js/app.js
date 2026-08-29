@@ -9,6 +9,7 @@ import {
 } from './solar.js';
 import { renderLineChart, renderSkyDome } from './charts.js';
 import { renderScene } from './scene.js';
+import { globeSVG, orbitSVG, earthOrbitPosition } from './orbit.js';
 
 /* ---------- presets ---------- */
 
@@ -113,6 +114,8 @@ const state = {
   minutes: initialNow.getHours() * 60 + initialNow.getMinutes(),
   live: false,
   scenic: false,
+  compare: false,
+  dateB: null,   // {year, month, day}; defaults to six months from date A
   placeLabel: '',
 };
 
@@ -126,6 +129,7 @@ try {
     state.tzZone = saved.tzZone ?? null;
     state.tz = state.tzZone ? zoneOffsetHours(state.tzZone, initialNow) : (Number.isFinite(saved.tz) ? saved.tz : state.tz);
     state.scenic = !!saved.scenic;
+    state.compare = !!saved.compare;
     state.placeLabel = saved.placeLabel || '';
     if (saved.theme) document.documentElement.dataset.theme = saved.theme;
   }
@@ -135,7 +139,7 @@ function persist() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       lat: state.lat, lon: state.lon, tz: state.tz, tzZone: state.tzZone,
-      scenic: state.scenic, placeLabel: state.placeLabel,
+      scenic: state.scenic, compare: state.compare, placeLabel: state.placeLabel,
       theme: document.documentElement.dataset.theme || null,
     }));
   } catch { /* storage unavailable (private mode etc.) */ }
@@ -152,6 +156,11 @@ const els = {
   geoStatus: $('geo-status'), themeToggle: $('theme-toggle'),
   explain: $('explain'), dayChartSub: $('day-chart-sub'),
   scenicToggle: $('scenic-toggle'), scenePanel: $('scene-panel'),
+  compareToggle: $('compare-toggle'), compareCard: $('compare-card'),
+  compareSub: $('compare-sub'), dateALabel: $('date-a-label'),
+  dateBGroup: $('date-b-group'), dateB: $('date-b-input'),
+  globeGrid: $('globe-grid'), deltaList: $('delta-list'),
+  orbitHolder: $('orbit-holder'), orbitCaption: $('orbit-caption'),
 };
 
 /* ---------- computation for one render ---------- */
@@ -163,6 +172,16 @@ function sampleDay(date, stepMin = 5) {
   }
   return out;
 }
+
+/** Six months from a date — the strongest seasonal contrast, as the default B. */
+function sixMonthsFrom(date) {
+  const month = ((date.month - 1 + 6) % 12) + 1;
+  const year = date.month + 6 > 12 ? date.year + 1 : date.year;
+  return { year, month, day: Math.min(date.day, daysInMonth(year, month)) };
+}
+
+const fmtDateShort = (d) => `${MONTHS[d.month - 1]} ${d.day}`;
+const fmtDateLong = (d) => `${MONTHS[d.month - 1]} ${d.day}, ${d.year}`;
 
 function computeModel() {
   const { lat, lon, tz, date, minutes } = state;
@@ -187,8 +206,20 @@ function computeModel() {
     yearDayLen.push({ x: doy, y: info.dayLength / 60 });
   }
 
+  // Comparison date: a full parallel set of the same quantities.
+  let compare = null;
+  if (state.compare) {
+    const dateB = state.dateB || sixMonthsFrom(date);
+    compare = {
+      dateB,
+      samples: sampleDay(dateB),
+      info: dayInfo(lat, lon, dateB, tz),
+      insolation: dailyInsolation(lat, lon, dateB, tz),
+    };
+  }
+
   return {
-    now, today, daySamples, junSamples, decSamples, yearNoon, yearDayLen,
+    now, today, daySamples, junSamples, decSamples, yearNoon, yearDayLen, compare,
     insolationToday: dailyInsolation(lat, lon, date, tz),
     insolationJun: dailyInsolation(lat, lon, junSolstice, tz),
     insolationDec: dailyInsolation(lat, lon, decSolstice, tz),
@@ -260,12 +291,18 @@ function domeConfig(model) {
   const hourMarks = model.daySamples
     .filter((s) => s.m % 60 === 0)
     .map((s) => ({ azimuth: s.pos.azimuth, elevation: s.pos.apparentElevation }));
+  const paths = model.compare
+    ? [
+        { name: fmtDateShort(state.date), colorVar: '--series-1', points: toPath(model.daySamples) },
+        { name: fmtDateShort(model.compare.dateB), colorVar: '--series-b', points: toPath(model.compare.samples) },
+      ]
+    : [
+        { name: 'Selected day', colorVar: '--series-1', points: toPath(model.daySamples) },
+        { name: 'Jun 21 solstice', colorVar: '--series-2', points: toPath(model.junSamples), dash: '4 4' },
+        { name: 'Dec 21 solstice', colorVar: '--series-3', points: toPath(model.decSamples), dash: '4 4' },
+      ];
   return {
-    paths: [
-      { name: 'Selected day', colorVar: '--series-1', points: toPath(model.daySamples) },
-      { name: 'Jun 21 solstice', colorVar: '--series-2', points: toPath(model.junSamples), dash: '4 4' },
-      { name: 'Dec 21 solstice', colorVar: '--series-3', points: toPath(model.decSamples), dash: '4 4' },
-    ],
+    paths,
     sun: { azimuth: model.now.azimuth, elevation: model.now.apparentElevation },
     hourMarks,
   };
@@ -273,15 +310,23 @@ function domeConfig(model) {
 
 function dayChartConfig(model) {
   const toSeries = (samples) => samples.map((s) => ({ x: s.m, y: s.pos.apparentElevation }));
-  const all = [model.daySamples, model.junSamples, model.decSamples];
+  const series = model.compare
+    ? [
+        { name: fmtDateShort(state.date), colorVar: '--series-1', points: toSeries(model.daySamples), area: true },
+        { name: fmtDateShort(model.compare.dateB), colorVar: '--series-b', points: toSeries(model.compare.samples), area: true },
+      ]
+    : [
+        { name: 'Selected day', colorVar: '--series-1', points: toSeries(model.daySamples), area: true },
+        { name: 'Jun 21 solstice', colorVar: '--series-2', points: toSeries(model.junSamples), dash: '4 4' },
+        { name: 'Dec 21 solstice', colorVar: '--series-3', points: toSeries(model.decSamples), dash: '4 4' },
+      ];
+  const all = model.compare
+    ? [model.daySamples, model.compare.samples]
+    : [model.daySamples, model.junSamples, model.decSamples];
   const yMax = Math.min(90, Math.ceil((Math.max(...all.flat().map((s) => s.pos.apparentElevation)) + 6) / 10) * 10);
   return {
     ariaLabel: 'Sun elevation through the day',
-    series: [
-      { name: 'Selected day', colorVar: '--series-1', points: toSeries(model.daySamples), area: true },
-      { name: 'Jun 21 solstice', colorVar: '--series-2', points: toSeries(model.junSamples), dash: '4 4' },
-      { name: 'Dec 21 solstice', colorVar: '--series-3', points: toSeries(model.decSamples), dash: '4 4' },
-    ],
+    series,
     xDomain: [0, 1440],
     yDomain: [-12, Math.max(yMax, 10)],
     xTicks: HOUR_TICKS,
@@ -297,14 +342,21 @@ function dayChartConfig(model) {
 }
 
 function irrConfig(model) {
-  const points = model.daySamples.map((s) => ({
+  const toGhi = (samples) => samples.map((s) => ({
     x: s.m,
     y: clearSkyIrradiance(s.pos.apparentElevation).ghi,
   }));
-  const yMax = Math.max(200, Math.ceil(Math.max(...points.map((p) => p.y)) / 100) * 100);
+  const points = toGhi(model.daySamples);
+  const series = model.compare
+    ? [
+        { name: fmtDateShort(state.date), colorVar: '--series-1', points, area: true },
+        { name: fmtDateShort(model.compare.dateB), colorVar: '--series-b', points: toGhi(model.compare.samples), area: true },
+      ]
+    : [{ name: 'Clear-sky GHI', colorVar: '--series-1', points, area: true }];
+  const yMax = Math.max(200, Math.ceil(Math.max(...series.flatMap((x) => x.points).map((p) => p.y)) / 100) * 100);
   return {
     ariaLabel: 'Clear-sky solar irradiance through the day',
-    series: [{ name: 'Clear-sky GHI', colorVar: '--series-1', points, area: true }],
+    series,
     xDomain: [0, 1440],
     yDomain: [0, yMax],
     xTicks: HOUR_TICKS,
@@ -467,12 +519,170 @@ function updateScene(model) {
   });
 }
 
+/* ---------- two-date comparison ---------- */
+
+function globePanel(date, info, colorVar, idPrefix) {
+  const times = info.polar === 'day' ? 'sun never sets'
+    : info.polar === 'night' ? 'sun never rises'
+    : `${fmtClock(info.sunrise)} – ${fmtClock(info.sunset)}`;
+  const panel = document.createElement('div');
+  panel.className = 'globe-panel';
+
+  const cap = document.createElement('div');
+  cap.className = 'globe-caption';
+  const name = document.createElement('span');
+  name.className = 'globe-date';
+  const swatch = document.createElement('span');
+  swatch.className = 'globe-swatch';
+  swatch.style.background = `var(${colorVar})`;
+  name.appendChild(swatch);
+  name.appendChild(document.createTextNode(fmtDateLong(date)));
+  const facts = document.createElement('span');
+  facts.className = 'globe-facts';
+  const noonText = fmtDeg(info.noonElevation).replace('-', '−');
+  facts.textContent = `noon ${noonText} · ${fmtDuration(info.dayLength)} of daylight · ${times}`;
+  cap.appendChild(name);
+  cap.appendChild(facts);
+  panel.appendChild(cap);
+
+  panel.insertAdjacentHTML('beforeend', globeSVG({
+    lat: state.lat,
+    dec: info.declination,
+    dateLabel: fmtDateLong(date),
+    colorVar,
+    idPrefix,
+  }));
+  return panel;
+}
+
+function deltaRow({ label, aVal, bVal, format, formatDiff, max, bars = true, note }) {
+  const row = document.createElement('div');
+  row.className = 'delta-row';
+
+  const lab = document.createElement('div');
+  lab.className = 'delta-label';
+  lab.textContent = label;
+  row.appendChild(lab);
+
+  const barsWrap = document.createElement('div');
+  barsWrap.className = 'delta-bars';
+  for (const [val, colorVar] of [[aVal, '--series-1'], [bVal, '--series-b']]) {
+    const r = document.createElement('div');
+    r.className = 'delta-bar-row';
+    const v = document.createElement('span');
+    v.className = 'delta-value';
+    v.textContent = format(val);
+    if (bars) {
+      const track = document.createElement('span');
+      track.className = 'delta-track';
+      const fill = document.createElement('span');
+      fill.className = 'delta-fill';
+      fill.style.background = `var(${colorVar})`;
+      fill.style.width = `${Math.max(0, Math.min(100, (val / max) * 100))}%`;
+      fill.style.display = 'block';
+      track.appendChild(fill);
+      r.appendChild(track);
+    }
+    r.appendChild(v);
+    barsWrap.appendChild(r);
+  }
+  row.appendChild(barsWrap);
+
+  const diff = document.createElement('div');
+  diff.className = 'delta-diff';
+  const d = bVal - aVal;
+  diff.textContent = `${d >= 0 ? '+' : '−'}${(formatDiff || format)(Math.abs(d))}`;
+  if (note) {
+    const sub = document.createElement('span');
+    sub.textContent = note;
+    diff.appendChild(sub);
+  }
+  row.appendChild(diff);
+
+  return row;
+}
+
+function renderCompare(model) {
+  const on = state.compare && !!model.compare;
+  els.compareCard.hidden = !on;
+  els.dateBGroup.hidden = !state.compare;
+  els.compareToggle.setAttribute('aria-pressed', String(state.compare));
+  els.compareToggle.classList.toggle('ghost-btn-active', state.compare);
+  els.dateALabel.textContent = state.compare ? 'Date A' : 'Date';
+  if (!on) return;
+
+  const { dateB, info: infoB, insolation: insolB } = model.compare;
+  const a = model.today;
+  const dateA = state.date;
+
+  els.compareSub.textContent =
+    `${fmtDateLong(dateA)} vs ${fmtDateLong(dateB)} at ${state.lat.toFixed(2)}°, ${state.lon.toFixed(2)}°`;
+
+  els.globeGrid.textContent = '';
+  els.globeGrid.appendChild(globePanel(dateA, a, '--series-1', 'ga'));
+  els.globeGrid.appendChild(globePanel(dateB, infoB, '--series-b', 'gb'));
+
+  const higher = (d) => (d >= 0 ? `${fmtDateShort(dateB)} higher` : `${fmtDateShort(dateA)} higher`);
+  const longer = (d) => (d >= 0 ? `${fmtDateShort(dateB)} longer` : `${fmtDateShort(dateA)} longer`);
+  const more = (d) => (d >= 0 ? `${fmtDateShort(dateB)} more` : `${fmtDateShort(dateA)} more`);
+
+  els.deltaList.textContent = '';
+  els.deltaList.appendChild(deltaRow({
+    label: 'Noon sun elevation',
+    aVal: a.noonElevation, bVal: infoB.noonElevation,
+    format: (v) => fmtDeg(v), max: 90,
+    note: higher(infoB.noonElevation - a.noonElevation),
+  }));
+  els.deltaList.appendChild(deltaRow({
+    label: 'Daylight',
+    aVal: a.dayLength, bVal: infoB.dayLength,
+    format: (v) => fmtDuration(v), max: 1440,
+    note: longer(infoB.dayLength - a.dayLength),
+  }));
+  els.deltaList.appendChild(deltaRow({
+    label: 'Clear-sky energy',
+    aVal: model.insolationToday, bVal: insolB,
+    format: (v) => `${v.toFixed(1)} kWh/m²`,
+    max: Math.max(model.insolationToday, insolB, 1),
+    note: more(insolB - model.insolationToday),
+  }));
+  els.deltaList.appendChild(deltaRow({
+    label: 'Sun overhead at',
+    aVal: a.declination, bVal: infoB.declination,
+    format: (v) => `${Math.abs(v).toFixed(1)}° ${v >= 0 ? 'N' : 'S'}`,
+    formatDiff: (v) => fmtDeg(v),
+    bars: false,
+    note: 'solar declination',
+  }));
+
+  // Orbit inset
+  const posA = earthOrbitPosition(dateA);
+  const posB = earthOrbitPosition(dateB);
+  els.orbitHolder.innerHTML = orbitSVG({
+    a: { pos: posA, colorVar: '--series-1', label: fmtDateShort(dateA) },
+    b: { pos: posB, colorVar: '--series-b', label: fmtDateShort(dateB) },
+    year: dateA.year,
+  });
+
+  const nearer = posA.radiusAU < posB.radiusAU ? dateA : dateB;
+  const spread = (Math.abs(posA.radiusAU - posB.radiusAU) / ((posA.radiusAU + posB.radiusAU) / 2)) * 100;
+  els.orbitCaption.textContent =
+    `Earth is ${posA.radiusAU.toFixed(4)} AU from the sun on ${fmtDateShort(dateA)} and ` +
+    `${posB.radiusAU.toFixed(4)} AU on ${fmtDateShort(dateB)} — a difference of only ` +
+    `${spread.toFixed(1)}%. The orbit above is drawn to scale, which is why it looks circular: ` +
+    `being ${spread.toFixed(1)}% nearer on ${fmtDateShort(nearer)} is not what drives the ` +
+    `difference between these two days. The tilt of the axis — fixed in space as Earth goes ` +
+    `round, as the short line through each marker shows — is.`;
+}
+
 function syncControls() {
   els.search.value = state.placeLabel;
   els.lat.value = state.lat;
   els.lon.value = state.lon;
   els.tz.value = state.tz;
   els.date.value = `${state.date.year}-${pad2(state.date.month)}-${pad2(state.date.day)}`;
+  const b = state.dateB || sixMonthsFrom(state.date);
+  els.dateB.value = `${b.year}-${pad2(b.month)}-${pad2(b.day)}`;
   els.slider.value = state.minutes;
   els.timeDisplay.textContent = fmtClock(state.minutes);
 }
@@ -504,6 +714,7 @@ function render() {
   els.explain.innerHTML = explainHTML(model);
   els.timeDisplay.textContent = fmtClock(state.minutes);
   updateScene(model);
+  renderCompare(model);
 }
 
 /** Lighter path when only the time-of-day changed: skip year charts. */
@@ -754,6 +965,21 @@ els.liveToggle.addEventListener('change', () => {
     els.nowBtn.click();
     liveTimer = setInterval(() => els.nowBtn.click(), 30000);
   }
+});
+
+els.compareToggle.addEventListener('click', () => {
+  state.compare = !state.compare;
+  if (state.compare && !state.dateB) state.dateB = sixMonthsFrom(state.date);
+  syncControls();
+  render();
+  persist();
+});
+
+els.dateB.addEventListener('change', () => {
+  const [y, m, d] = els.dateB.value.split('-').map(Number);
+  if (!y || !m || !d) return;
+  state.dateB = { year: y, month: m, day: d };
+  render();
 });
 
 els.themeToggle.addEventListener('click', () => {

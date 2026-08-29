@@ -34,8 +34,10 @@ function julianCentury(jd) {
 /**
  * Core solar geometry for one instant.
  * @param {number} jd Julian Day including the fractional (UTC) day.
- * @returns {{declination:number, eqOfTimeMin:number}}
- *   declination in degrees, equation of time in minutes.
+ * @returns {{declination:number, eqOfTimeMin:number, apparentLong:number,
+ *            trueAnomaly:number, radiusAU:number, obliquity:number}}
+ *   declination and angles in degrees, equation of time in minutes,
+ *   sun-Earth distance in AU.
  */
 export function solarGeometry(jd) {
   const t = julianCentury(jd);
@@ -50,6 +52,9 @@ export function solarGeometry(jd) {
     Math.sin(3 * meanAnom * RAD) * 0.000289;
 
   const trueLong = meanLong + eqOfCenter;
+  const trueAnomaly = meanAnom + eqOfCenter;
+  // Sun-Earth distance (AU), Meeus 25.5 — the orbit is very nearly circular.
+  const radiusAU = (1.000001018 * (1 - eccent * eccent)) / (1 + eccent * Math.cos(trueAnomaly * RAD));
   const omega = 125.04 - 1934.136 * t;
   const apparentLong = trueLong - 0.00569 - 0.00478 * Math.sin(omega * RAD);
 
@@ -70,7 +75,7 @@ export function solarGeometry(jd) {
       1.25 * eccent * eccent * Math.sin(2 * meanAnom * RAD)
     );
 
-  return { declination, eqOfTimeMin };
+  return { declination, eqOfTimeMin, apparentLong, trueAnomaly, radiusAU, obliquity: obliq };
 }
 
 /** Atmospheric refraction correction (degrees) for a true elevation (degrees). NOAA piecewise fit. */

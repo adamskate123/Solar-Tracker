@@ -28,6 +28,13 @@ No accounts, no build step, no dependencies: open one HTML file and go.
 - **City search** — type any city name to jump there; powered by the free
   Open-Meteo geocoding API (with DST-correct time zones), falling back to a
   built-in city list when offline.
+- **⇄ Compare two dates** — pick a second date and the app puts them side by
+  side: an annotated Earth schematic for each (sunlight from the left, the
+  terminator, the tilted axis, your latitude's lit and dark arcs, and the noon
+  sun angle drawn at your position), a delta readout for noon elevation,
+  daylight, clear-sky energy and declination, and a to-scale orbit inset that
+  shows why the 3% change in sun distance is *not* what makes the difference.
+  The day charts and sky dome overlay both dates too.
 - **✨ Scenic mode** — an ambient sky panel whose colors track the sun through
   night, twilight, golden hour and day, with a landscape that changes with the
   season at your hemisphere (snow in winter, autumn golds, tropical greens…).
@@ -72,6 +79,7 @@ css/style.css     theme tokens (light/dark) and layout
 js/solar.js       astronomy: sun position, rise/set, air mass, irradiance
 js/charts.js      dependency-free SVG charts (line + polar sky dome)
 js/scene.js       scenic mode: sky palette, seasons, landscape renderer
+js/orbit.js       comparison schematics: Earth geometry + to-scale orbit
 js/app.js         UI state, city search, geolocation, explanations
 tests/            node:test suite for the astronomy math
 ```
@@ -79,9 +87,13 @@ tests/            node:test suite for the astronomy math
 ## Tests
 
 ```bash
-node --test tests/solar.test.mjs
+node --test tests/*.mjs
 ```
 
-14 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
+26 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
 reference position, polar day/night, day-length symmetry, air mass and
-clear-sky insolation sanity checks.
+clear-sky insolation sanity checks, the scenic sky palette and hemisphere
+seasons, and the comparison schematic's geometry — including a cross-check
+that the lit/dark split drawn on each globe always agrees with the
+independently computed day length, and that the orbit inset reproduces
+perihelion in early January and aphelion in early July.
