@@ -40,14 +40,20 @@
       <input id="tz-input" type="number" min="-12" max="14" step="0.25" value="-5">
     </div>
     <div class="control-group">
-      <label for="date-input">Date</label>
+      <label for="date-input"><span id="date-a-label">Date</span></label>
       <input id="date-input" type="date">
+    </div>
+    <div class="control-group" id="date-b-group" hidden>
+      <label for="date-b-input">Compare with</label>
+      <input id="date-b-input" type="date">
     </div>
     <div class="control-group control-actions">
       <label>&nbsp;</label>
       <div class="btn-row">
         <button id="geo-btn" class="ghost-btn" type="button" title="Use browser geolocation">📍 My location</button>
         <button id="now-btn" class="ghost-btn" type="button" title="Jump to the current date and time">⏱ Now</button>
+        <button id="compare-toggle" class="ghost-btn" type="button" aria-pressed="false"
+                title="Compare two dates side by side">⇄ Compare dates</button>
         <label class="live-label"><input id="live-toggle" type="checkbox"> Track live</label>
       </div>
     </div>
@@ -68,6 +74,29 @@
     <div class="tile"><span class="tile-label">Day length</span><span class="tile-value" id="stat-daylength">–</span><span class="tile-sub" id="stat-daylength-sub"></span></div>
     <div class="tile"><span class="tile-label">Clear-sky radiation now</span><span class="tile-value" id="stat-ghi">–</span><span class="tile-sub" id="stat-ghi-sub"></span></div>
     <div class="tile"><span class="tile-label">Clear-sky energy today</span><span class="tile-value" id="stat-insolation">–</span><span class="tile-sub" id="stat-insolation-sub"></span></div>
+  </section>
+
+  <!-- Two-date comparison schematic -->
+  <section id="compare-card" class="card compare-card" hidden aria-label="Two-date comparison">
+    <div class="compare-head">
+      <h2>Two dates, side by side</h2>
+      <p class="chart-sub" id="compare-sub"></p>
+    </div>
+    <div class="globe-grid" id="globe-grid"></div>
+    <p class="globe-key">
+      Sunlight arrives from the left, so the vertical line is the day–night terminator and the
+      left half of each Earth is in daylight. The tilted line is Earth's rotation axis; faint
+      horizontal lines are the equator, tropics and polar circles. The thick colored line is
+      <strong>your latitude</strong> — its bright part is the portion of the daily spin that sits
+      in sunlight, which <em>is</em> the day length. The dot marks you at solar noon, with the
+      angle between the incoming ray and your local horizon labeled.
+    </p>
+    <div class="delta-list" id="delta-list"></div>
+    <div class="orbit-block">
+      <h3>Where each date sits on Earth's orbit</h3>
+      <div id="orbit-holder"></div>
+      <p class="orbit-caption" id="orbit-caption"></p>
+    </div>
   </section>
 
   <!-- Charts -->
