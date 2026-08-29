@@ -86,6 +86,17 @@ main {
 }
 .site-header h1 { margin: 0; font-size: 1.5rem; }
 .tagline { margin: 0; color: var(--text-secondary); flex: 1 1 260px; }
+.version-badge {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+  cursor: default;
+}
 
 /* Cards */
 .card {

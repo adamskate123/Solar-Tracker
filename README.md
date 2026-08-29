@@ -61,6 +61,17 @@ from `file://` — if yours doesn't, use the one-liner above.
 - Drag the **time slider** to scrub through the day; **⏱ Now** jumps to the
   current moment; **Track live** keeps following the real sun.
 
+## Version badge
+
+The header shows the running version (for example `v1.2.0`); hovering it reveals
+the build date. Use it to confirm a deploy actually took effect — if the badge
+still shows the previous version, the browser or CDN is serving a cached build
+(GitHub Pages caches assets for roughly ten minutes; a hard refresh clears it).
+The version is also on `window.SOLAR_TRACKER_VERSION` for a quick console check.
+
+To release, bump `VERSION` and `BUILD_DATE` together in `js/version.js` — that
+file is the single source of truth.
+
 ## Accuracy
 
 - Sun positions use the **NOAA solar calculator equations** (Meeus,
@@ -80,6 +91,7 @@ js/solar.js       astronomy: sun position, rise/set, air mass, irradiance
 js/charts.js      dependency-free SVG charts (line + polar sky dome)
 js/scene.js       scenic mode: sky palette, seasons, landscape renderer
 js/orbit.js       comparison schematics: Earth geometry + to-scale orbit
+js/version.js     version + build date shown in the header badge
 js/app.js         UI state, city search, geolocation, explanations
 tests/            node:test suite for the astronomy math
 ```
@@ -90,10 +102,11 @@ tests/            node:test suite for the astronomy math
 node --test tests/*.mjs
 ```
 
-26 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
+28 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
 reference position, polar day/night, day-length symmetry, air mass and
 clear-sky insolation sanity checks, the scenic sky palette and hemisphere
 seasons, and the comparison schematic's geometry — including a cross-check
 that the lit/dark split drawn on each globe always agrees with the
 independently computed day length, and that the orbit inset reproduces
-perihelion in early January and aphelion in early July.
+perihelion in early January and aphelion in early July, plus a check that the
+version string is well formed and the header badge element exists.

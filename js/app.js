@@ -10,6 +10,7 @@ import {
 import { renderLineChart, renderSkyDome } from './charts.js';
 import { renderScene } from './scene.js';
 import { globeSVG, orbitSVG, earthOrbitPosition } from './orbit.js';
+import { VERSION, BUILD_DATE } from './version.js';
 
 /* ---------- presets ---------- */
 
@@ -998,6 +999,11 @@ els.scenicToggle.addEventListener('click', () => {
 });
 
 /* ---------- boot ---------- */
+
+const badge = $('version-badge');
+badge.textContent = `v${VERSION}`;
+badge.title = `Solar Tracker v${VERSION} — built ${BUILD_DATE}`;
+window.SOLAR_TRACKER_VERSION = { version: VERSION, buildDate: BUILD_DATE };
 
 syncControls();
 render();
