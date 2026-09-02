@@ -38,7 +38,14 @@ No accounts, no build step, no dependencies: open one HTML file and go.
 - **✨ Scenic mode** — an ambient sky panel whose colors track the sun through
   night, twilight, golden hour and day, with a landscape that changes with the
   season at your hemisphere (snow in winter, autumn golds, tropical greens…).
-  Your location, theme and scenic preference are remembered between visits.
+  Trees on the hillside are grown from a recursive branching structure — a
+  trunk forking into limbs and twigs, different for every tree but stable
+  across renders — and they carry the season: blossom in spring, full green in
+  summer, gold with fallen leaves in autumn, bare snow-dusted branches in
+  winter, palms in the tropics. They also **cast real shadows**: length is the
+  true `height / tan(elevation)`, sweeping from long and westward at sunrise,
+  to a tight pool at solar noon, to long and eastward at sunset. Your location,
+  theme and scenic preference are remembered between visits.
 
 Every chart has hover tooltips (mouse or keyboard arrows), a data-table view,
 and full light/dark theming.
@@ -63,7 +70,7 @@ from `file://` — if yours doesn't, use the one-liner above.
 
 ## Version badge
 
-The header shows the running version (for example `v1.2.0`); hovering it reveals
+The header shows the running version (currently `v1.3.0`); hovering it reveals
 the build date. Use it to confirm a deploy actually took effect — if the badge
 still shows the previous version, the browser or CDN is serving a cached build
 (GitHub Pages caches assets for roughly ten minutes; a hard refresh clears it).
@@ -102,11 +109,17 @@ tests/            node:test suite for the astronomy math
 node --test tests/*.mjs
 ```
 
-28 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
+37 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
 reference position, polar day/night, day-length symmetry, air mass and
 clear-sky insolation sanity checks, the scenic sky palette and hemisphere
 seasons, and the comparison schematic's geometry — including a cross-check
 that the lit/dark split drawn on each globe always agrees with the
 independently computed day length, and that the orbit inset reproduces
 perihelion in early January and aphelion in early July, plus a check that the
-version string is well formed and the header badge element exists.
+version string is well formed and the header badge element exists. Six cover
+the scenic shadow geometry: length equal to `height / tan(elevation)`, the
+morning/afternoon mirror about noon, the foreshortened toward-viewer shadow at
+solar noon, the hemisphere flip, the long-shadow cap, and no shadow at all once
+the sun is below the horizon. Three more cover the branch generator: that it
+is deterministic, that bigger trees carry more branches than distant ones, and
+that a crown stays taller than it is wide.
