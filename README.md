@@ -38,10 +38,12 @@ No accounts, no build step, no dependencies: open one HTML file and go.
 - **✨ Scenic mode** — an ambient sky panel whose colors track the sun through
   night, twilight, golden hour and day, with a landscape that changes with the
   season at your hemisphere (snow in winter, autumn golds, tropical greens…).
-  Trees on the hillside carry the season — blossom in spring, full green in
+  Trees on the hillside are grown from a recursive branching structure — a
+  trunk forking into limbs and twigs, different for every tree but stable
+  across renders — and they carry the season: blossom in spring, full green in
   summer, gold with fallen leaves in autumn, bare snow-dusted branches in
-  winter, palms in the tropics — and **cast real shadows**: length is the true
-  `height / tan(elevation)`, and they sweep from long and westward at sunrise,
+  winter, palms in the tropics. They also **cast real shadows**: length is the
+  true `height / tan(elevation)`, sweeping from long and westward at sunrise,
   to a tight pool at solar noon, to long and eastward at sunset. Your location,
   theme and scenic preference are remembered between visits.
 
@@ -107,7 +109,7 @@ tests/            node:test suite for the astronomy math
 node --test tests/*.mjs
 ```
 
-34 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
+37 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
 reference position, polar day/night, day-length symmetry, air mass and
 clear-sky insolation sanity checks, the scenic sky palette and hemisphere
 seasons, and the comparison schematic's geometry — including a cross-check
@@ -118,4 +120,6 @@ version string is well formed and the header badge element exists. Six cover
 the scenic shadow geometry: length equal to `height / tan(elevation)`, the
 morning/afternoon mirror about noon, the foreshortened toward-viewer shadow at
 solar noon, the hemisphere flip, the long-shadow cap, and no shadow at all once
-the sun is below the horizon.
+the sun is below the horizon. Three more cover the branch generator: that it
+is deterministic, that bigger trees carry more branches than distant ones, and
+that a crown stays taller than it is wide.

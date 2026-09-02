@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { skyColors, seasonFor, smoothstep, shadowFor } from '../js/scene.js';
+import { skyColors, seasonFor, smoothstep, shadowFor, buildTreeSkeleton } from '../js/scene.js';
 
 test('smoothstep clamps and interpolates', () => {
   assert.equal(smoothstep(0, 10, -5), 0);
@@ -75,4 +75,27 @@ test('the hemispheres mirror each other', () => {
 test('no shadow once the sun is below the horizon', () => {
   assert.equal(shadowFor(0, 180, -1, 40), null);
   assert.equal(shadowFor(-6, 180, -1, 40), null);
+});
+
+test('branch skeletons are deterministic', () => {
+  const tree = { x: 0.45, ground: 250, scale: 1.34 };
+  assert.deepEqual(buildTreeSkeleton(tree), buildTreeSkeleton(tree),
+    'the same tree must grow the same way on every render');
+});
+
+test('nearer trees carry more branches than distant ones', () => {
+  const near = buildTreeSkeleton({ x: 0.45, ground: 250, scale: 1.34 });
+  const far = buildTreeSkeleton({ x: 0.84, ground: 202, scale: 0.64 });
+  assert.ok(near.segments.length > far.segments.length,
+    `near ${near.segments.length} vs far ${far.segments.length}`);
+  assert.ok(near.segments.length >= 20, 'a foreground tree should have real branch structure');
+  assert.ok(near.tips.length >= 8, 'and enough twig tips to hang foliage on');
+});
+
+test('crowns stay taller than they are wide, so trees do not read as shrubs', () => {
+  for (const tree of [{ x: 0.45, ground: 250, scale: 1.34 }, { x: 0.2, ground: 236, scale: 1.1 }]) {
+    const sk = buildTreeSkeleton(tree);
+    assert.ok(sk.height > 0, 'has height');
+    assert.ok(sk.halfWidth * 2 < sk.height, `width ${(sk.halfWidth * 2).toFixed(1)} vs height ${sk.height.toFixed(1)}`);
+  }
 });
