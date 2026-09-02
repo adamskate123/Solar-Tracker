@@ -77,6 +77,25 @@
     <div class="tile"><span class="tile-label">Clear-sky energy today</span><span class="tile-value" id="stat-insolation">–</span><span class="tile-sub" id="stat-insolation-sub"></span></div>
   </section>
 
+  <!-- Weather -->
+  <section id="weather-card" class="card weather-card" aria-label="Weather">
+    <div class="weather-head">
+      <h2>Weather</h2>
+      <p class="chart-sub" id="weather-sub">Loading…</p>
+    </div>
+    <div class="weather-body" id="weather-body" hidden>
+      <div class="weather-now">
+        <span class="weather-icon" id="weather-icon">☀️</span>
+        <div class="weather-now-text">
+          <span class="weather-label" id="weather-label">—</span>
+          <span class="weather-temp" id="weather-temp">—</span>
+        </div>
+      </div>
+      <div class="weather-stats" id="weather-stats"></div>
+    </div>
+    <p class="weather-note" id="weather-note" hidden></p>
+  </section>
+
   <!-- Two-date comparison schematic -->
   <section id="compare-card" class="card compare-card" hidden aria-label="Two-date comparison">
     <div class="compare-head">
@@ -113,8 +132,8 @@
       <div id="day-chart"></div>
     </div>
     <div class="card chart-card">
-      <h2>Clear-sky solar radiation today</h2>
-      <p class="chart-sub">Estimated global horizontal irradiance with no clouds (idealized).</p>
+      <h2 id="irr-title">Clear-sky solar radiation today</h2>
+      <p class="chart-sub" id="irr-sub">Estimated global horizontal irradiance with no clouds (idealized).</p>
       <div id="irradiance-chart"></div>
     </div>
     <div class="card chart-card">

@@ -11,6 +11,7 @@ import { renderLineChart, renderSkyDome } from './charts.js';
 import { renderScene } from './scene.js';
 import { globeSVG, orbitSVG, earthOrbitPosition } from './orbit.js';
 import { VERSION, BUILD_DATE } from './version.js';
+import { fetchWeather, summarize, cloudAttenuation } from './weather.js';
 
 /* ---------- presets ---------- */
 
@@ -118,6 +119,8 @@ const state = {
   compare: false,
   dateB: null,   // {year, month, day}; defaults to six months from date A
   placeLabel: '',
+  // status: idle | loading | ok | out-of-range | error
+  weather: { status: 'idle', key: '', data: null, summary: null, message: '' },
 };
 
 /* Restore location, theme and scenic preference from the last visit. */
@@ -162,6 +165,11 @@ const els = {
   dateBGroup: $('date-b-group'), dateB: $('date-b-input'),
   globeGrid: $('globe-grid'), deltaList: $('delta-list'),
   orbitHolder: $('orbit-holder'), orbitCaption: $('orbit-caption'),
+  weatherCard: $('weather-card'), weatherSub: $('weather-sub'),
+  weatherBody: $('weather-body'), weatherIcon: $('weather-icon'),
+  weatherLabel: $('weather-label'), weatherTemp: $('weather-temp'),
+  weatherStats: $('weather-stats'), weatherNote: $('weather-note'),
+  irrTitle: $('irr-title'), irrSub: $('irr-sub'),
 };
 
 /* ---------- computation for one render ---------- */
@@ -219,8 +227,11 @@ function computeModel() {
     };
   }
 
+  const w = state.weather;
+  const weatherHours = w.status === 'ok' && w.data ? w.data.day.hours : null;
+
   return {
-    now, today, daySamples, junSamples, decSamples, yearNoon, yearDayLen, compare,
+    now, today, daySamples, junSamples, decSamples, yearNoon, yearDayLen, compare, weatherHours,
     insolationToday: dailyInsolation(lat, lon, date, tz),
     insolationJun: dailyInsolation(lat, lon, junSolstice, tz),
     insolationDec: dailyInsolation(lat, lon, decSolstice, tz),
@@ -342,18 +353,51 @@ function dayChartConfig(model) {
   };
 }
 
+/**
+ * Put the provider's hourly radiation on the same 5-minute grid as the
+ * clear-sky curve, so the crosshair and the table line the two up exactly.
+ * Values are pinned to zero wherever the sun is down.
+ */
+function resampleHourly(hours, clearPoints) {
+  const pts = hours
+    .filter((h) => typeof h.ghi === 'number' && Number.isFinite(h.ghi))
+    .map((h) => ({ x: h.minutes, y: h.ghi }));
+  if (pts.length < 2) return null;
+  return clearPoints.map((cp) => {
+    if (cp.y <= 0) return { x: cp.x, y: 0 };
+    const x = Math.max(pts[0].x, Math.min(pts[pts.length - 1].x, cp.x));
+    let i = 0;
+    while (i < pts.length - 2 && pts[i + 1].x < x) i++;
+    const a = pts[i];
+    const b = pts[i + 1];
+    const t = b.x === a.x ? 0 : (x - a.x) / (b.x - a.x);
+    return { x: cp.x, y: Math.max(0, a.y + (b.y - a.y) * t) };
+  });
+}
+
 function irrConfig(model) {
   const toGhi = (samples) => samples.map((s) => ({
     x: s.m,
     y: clearSkyIrradiance(s.pos.apparentElevation).ghi,
   }));
   const points = toGhi(model.daySamples);
+
+  // With weather loaded, the clear-sky curve becomes the reference ceiling and
+  // the measured curve carries the emphasis - the gap between them is the story.
+  const sum = weatherSummary();
+  const actual = !model.compare && sum ? resampleHourly(model.weatherHours || [], points) : null;
+
   const series = model.compare
     ? [
         { name: fmtDateShort(state.date), colorVar: '--series-1', points, area: true },
         { name: fmtDateShort(model.compare.dateB), colorVar: '--series-b', points: toGhi(model.compare.samples), area: true },
       ]
-    : [{ name: 'Clear-sky GHI', colorVar: '--series-1', points, area: true }];
+    : actual
+      ? [
+          { name: 'Actual (with cloud)', colorVar: '--series-2', points: actual, area: true },
+          { name: 'Clear-sky ceiling', colorVar: '--series-1', points, dash: '5 4' },
+        ]
+      : [{ name: 'Clear-sky GHI', colorVar: '--series-1', points, area: true }];
   const yMax = Math.max(200, Math.ceil(Math.max(...series.flatMap((x) => x.points).map((p) => p.y)) / 100) * 100);
   return {
     ariaLabel: 'Clear-sky solar irradiance through the day',
@@ -366,7 +410,8 @@ function irrConfig(model) {
     formatY: (y) => `${Math.round(y)} W/m²`,
     markers: [{
       x: state.minutes,
-      y: clearSkyIrradiance(model.now.apparentElevation).ghi,
+      y: (actual ? series[0].points : points)
+        .reduce((best, p) => (Math.abs(p.x - state.minutes) < Math.abs(best.x - state.minutes) ? p : best), points[0]).y,
       colorVar: '--sun',
     }],
     tableCaption: 'Local time',
@@ -509,15 +554,157 @@ function updateScene(model) {
     : today.polar === 'night' ? 'polar night'
     : elev > -18 ? (state.minutes < today.solarNoon ? 'dawn twilight' : 'dusk twilight')
     : 'night';
+  const sum = weatherSummary();
   renderScene(els.scenePanel, {
     elevation: model.now.apparentElevation,
     azimuth: model.now.azimuth,
     lat: state.lat,
     month: state.date.month,
+    weather: sum ? {
+      cloud: sum.at.cloud ?? 0,
+      precip: sum.at.precip ?? 0,
+      group: sum.condition.group,
+    } : null,
     timeLabel: fmtClock(state.minutes),
     dateLabel: `${MONTHS[state.date.month - 1]} ${state.date.day}${state.placeLabel ? ' · ' + state.placeLabel : ''}`,
-    sunNote,
+    sunNote: sum ? `${sum.condition.icon} ${sum.condition.label} · ${sunNote}` : sunNote,
   });
+}
+
+/* ---------- weather ---------- */
+
+const cToF = (c) => c * 9 / 5 + 32;
+const fmtTemp = (c) => (c == null ? '—' : `${Math.round(c)}°C / ${Math.round(cToF(c))}°F`);
+
+/** Local calendar date right now at the selected place. */
+function todayLocal() {
+  return nowInOffset(state.tz).date;
+}
+
+let weatherAbort = null;
+let weatherTimer = null;
+
+/** Refetch only when the place or date changes — not while scrubbing time. */
+function scheduleWeather() {
+  const key = `${state.lat.toFixed(3)},${state.lon.toFixed(3)},${fmtDateShort(state.date)},${state.date.year}`;
+  if (key === state.weather.key && state.weather.status !== 'idle') return;
+
+  state.weather = { status: 'loading', key, data: null, summary: null, message: '' };
+  renderWeather();
+
+  clearTimeout(weatherTimer);
+  weatherTimer = setTimeout(() => {
+    if (weatherAbort) weatherAbort.abort();
+    weatherAbort = new AbortController();
+    const forDate = { ...state.date };
+    fetchWeather(state.lat, state.lon, forDate, todayLocal(), weatherAbort.signal)
+      .then((data) => {
+        if (state.weather.key !== key) return;   // a newer request superseded this
+        state.weather = { status: 'ok', key, data, summary: null, message: '' };
+        render();
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError' || state.weather.key !== key) return;
+        state.weather = {
+          status: err.code === 'OUT_OF_RANGE' ? 'out-of-range' : 'error',
+          key,
+          data: null,
+          summary: null,
+          message: err.message,
+        };
+        renderWeather();
+      });
+  }, 350);
+}
+
+function weatherStat(label, value, sub) {
+  const wrap = document.createElement('div');
+  wrap.className = 'weather-stat';
+  const l = document.createElement('span');
+  l.className = 'weather-stat-label';
+  l.textContent = label;
+  const v = document.createElement('span');
+  v.className = 'weather-stat-value';
+  v.textContent = value;
+  wrap.appendChild(l);
+  wrap.appendChild(v);
+  if (sub) {
+    const sEl = document.createElement('span');
+    sEl.className = 'weather-stat-sub';
+    sEl.textContent = sub;
+    wrap.appendChild(sEl);
+  }
+  return wrap;
+}
+
+/** Conditions for the selected day, or null when none are loaded. */
+function weatherSummary() {
+  const w = state.weather;
+  if (w.status !== 'ok' || !w.data) return null;
+  return summarize(w.data.day, state.minutes);
+}
+
+function renderWeather(model) {
+  const w = state.weather;
+  const label = fmtDateLong(state.date);
+
+  if (w.status !== 'ok') {
+    els.weatherBody.hidden = true;
+    els.weatherNote.hidden = true;
+    els.weatherSub.textContent =
+      w.status === 'loading' ? `Loading conditions for ${label}…`
+      : w.status === 'out-of-range'
+        ? `No weather data for ${label} — the forecast runs 15 days ahead, and records go back to 1940 (with a few days' lag).`
+        : w.status === 'error'
+          ? `Couldn't load weather (${w.message}). The solar figures above are unaffected.`
+          : '';
+    return;
+  }
+
+  const sum = summarize(w.data.day, state.minutes);
+  els.weatherSub.textContent =
+    `${label} · ${w.data.kind === 'archive' ? 'observed record' : 'forecast'} from Open-Meteo`;
+  els.weatherBody.hidden = false;
+
+  els.weatherIcon.textContent = sum.condition.icon;
+  els.weatherLabel.textContent = `${sum.condition.label} · at ${fmtClock(state.minutes)}`;
+  els.weatherTemp.textContent = fmtTemp(sum.at.temp);
+
+  els.weatherStats.textContent = '';
+  els.weatherStats.appendChild(weatherStat('High / low',
+    sum.tempMax != null ? `${Math.round(sum.tempMax)}° / ${Math.round(sum.tempMin)}°C` : '—',
+    sum.tempMax != null ? `${Math.round(cToF(sum.tempMax))}° / ${Math.round(cToF(sum.tempMin))}°F` : ''));
+  els.weatherStats.appendChild(weatherStat('Cloud cover',
+    sum.at.cloud != null ? `${Math.round(sum.at.cloud)}%` : '—',
+    sum.cloudMean != null ? `${Math.round(sum.cloudMean)}% average today` : ''));
+  els.weatherStats.appendChild(weatherStat('Precipitation',
+    `${(sum.precipTotal ?? 0).toFixed(1)} mm`, 'total for the day'));
+  els.weatherStats.appendChild(weatherStat('Wind',
+    sum.at.wind != null ? `${Math.round(sum.at.wind)} km/h` : '—',
+    sum.at.humidity != null ? `${Math.round(sum.at.humidity)}% humidity` : ''));
+  els.weatherStats.appendChild(weatherStat('Sunshine',
+    sum.sunshineHours != null ? `${sum.sunshineHours.toFixed(1)} h` : '—',
+    'direct sun on the ground'));
+
+  // The point of all this: how much of the clear-sky ceiling the sky allowed.
+  const clear = model ? model.insolationToday : null;
+  if (sum.actualKWh != null && clear) {
+    const pct = Math.round((sum.actualKWh / clear) * 100);
+    els.weatherStats.appendChild(weatherStat('Actual energy',
+      `${sum.actualKWh.toFixed(1)} kWh/m²`, `${pct}% of clear sky`));
+    els.weatherNote.hidden = false;
+    els.weatherNote.textContent =
+      `A cloud-free sky here would deliver ${clear.toFixed(1)} kWh/m² on this date. `
+      + `The sky actually delivered ${sum.actualKWh.toFixed(1)} kWh/m² — `
+      + `${pct >= 97 ? 'essentially the full clear-sky ceiling'
+        : `${100 - pct}% of it lost to cloud`}. `
+      + `That gap is the difference between the two curves on the radiation chart.`;
+  } else {
+    els.weatherNote.hidden = false;
+    els.weatherNote.textContent =
+      `Cloud cover averaged ${Math.round(sum.cloudMean ?? 0)}%, which by the Kasten–Czeplak relation `
+      + `would pass roughly ${Math.round(cloudAttenuation(sum.cloudMean ?? 0) * 100)}% of clear-sky radiation.`;
+  }
 }
 
 /* ---------- two-date comparison ---------- */
@@ -716,6 +903,19 @@ function render() {
   els.timeDisplay.textContent = fmtClock(state.minutes);
   updateScene(model);
   renderCompare(model);
+  renderWeather(model);
+  labelIrradiance(model);
+}
+
+/** The radiation card means something different once weather is loaded. */
+function labelIrradiance(model) {
+  const showsActual = !model.compare && !!weatherSummary() && !!model.weatherHours;
+  els.irrTitle.textContent = showsActual
+    ? 'Solar radiation today: actual vs clear sky'
+    : 'Clear-sky solar radiation today';
+  els.irrSub.textContent = showsActual
+    ? 'The dashed line is the cloud-free ceiling; the filled curve is what the sky actually delivered.'
+    : 'Estimated global horizontal irradiance with no clouds (idealized).';
 }
 
 /** Lighter path when only the time-of-day changed: skip year charts. */
@@ -728,6 +928,8 @@ function renderTimeOnly() {
   els.explain.innerHTML = explainHTML(model);
   els.timeDisplay.textContent = fmtClock(state.minutes);
   updateScene(model);
+  renderWeather(model);
+  labelIrradiance(model);
 }
 
 /* ---------- events ---------- */
@@ -759,6 +961,7 @@ function applyPlace(place) {
   note(place.tzZone ? '' :
     'No time zone found for this place — check the UTC offset field.');
   syncControls();
+  scheduleWeather();
   render();
   persist();
 }
@@ -894,6 +1097,7 @@ function onCoordEdit() {
   } else {
     note('');
   }
+  scheduleWeather();
   render();
   persist();
 }
@@ -917,6 +1121,7 @@ els.date.addEventListener('change', () => {
     state.tz = zoneOffsetHours(state.tzZone, selectedDateAsUTC());
     els.tz.value = state.tz;
   }
+  scheduleWeather();
   render();
 });
 
@@ -931,6 +1136,7 @@ els.nowBtn.addEventListener('click', () => {
   state.date = date;
   state.minutes = minutes;
   syncControls();
+  scheduleWeather();
   render();
 });
 
@@ -950,6 +1156,7 @@ els.geoBtn.addEventListener('click', () => {
       els.search.value = 'My location';
       note(`Using your location: ${state.lat}°, ${state.lon}°.`);
       syncControls();
+      scheduleWeather();
       render();
       persist();
     },
@@ -1007,3 +1214,4 @@ window.SOLAR_TRACKER_VERSION = { version: VERSION, buildDate: BUILD_DATE };
 
 syncControls();
 render();
+scheduleWeather();

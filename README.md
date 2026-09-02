@@ -35,6 +35,13 @@ No accounts, no build step, no dependencies: open one HTML file and go.
   daylight, clear-sky energy and declination, and a to-scale orbit inset that
   shows why the 3% change in sun distance is *not* what makes the difference.
   The day charts and sky dome overlay both dates too.
+- **🌦️ Weather** — real conditions for the selected place and date, from the
+  free Open-Meteo API. Temperature, cloud cover, precipitation, wind and
+  sunshine hours, plus the number this app cares about most: the **actual**
+  solar energy the sky delivered against the clear-sky ceiling it computes.
+  The radiation chart plots both curves, so the gap between them *is* what the
+  clouds took. Forecasts run 15 days ahead and the reanalysis archive reaches
+  back to 1940; outside that window the app says so rather than guessing.
 - **✨ Scenic mode** — an ambient sky panel whose colors track the sun through
   night, twilight, golden hour and day, with a landscape that changes with the
   season at your hemisphere (snow in winter, autumn golds, tropical greens…).
@@ -45,7 +52,10 @@ No accounts, no build step, no dependencies: open one HTML file and go.
   winter, palms in the tropics. They also **cast real shadows**: length is the
   true `height / tan(elevation)`, sweeping from long and westward at sunrise,
   to a tight pool at solar noon, to long and eastward at sunset. Your location,
-  theme and scenic preference are remembered between visits.
+  theme and scenic preference are remembered between visits. With weather
+  loaded the panel follows the real sky too: clouds build with the cover
+  percentage, the sky greys and the sun fades behind them, shadows soften and
+  go as cloud takes the direct beam, and rain or snow falls when it is falling.
 
 Every chart has hover tooltips (mouse or keyboard arrows), a data-table view,
 and full light/dark theming.
@@ -70,7 +80,7 @@ from `file://` — if yours doesn't, use the one-liner above.
 
 ## Version badge
 
-The header shows the running version (currently `v1.3.0`); hovering it reveals
+The header shows the running version (currently `v1.4.0`); hovering it reveals
 the build date. Use it to confirm a deploy actually took effect — if the badge
 still shows the previous version, the browser or CDN is serving a cached build
 (GitHub Pages caches assets for roughly ten minutes; a hard refresh clears it).
@@ -85,9 +95,15 @@ file is the single source of truth.
   *Astronomical Algorithms*): about **0.01° accuracy for 1900–2100**, verified
   in the test suite against the NREL SPA benchmark case.
 - Sunrise/sunset use the standard 90.833° zenith (refraction + solar disc).
-- Radiation numbers are **idealized clear-sky estimates** (Kasten–Young air
-  mass, Meinel/ASCE attenuation). Clouds, haze, altitude and horizon obstacles
-  will change real-world values — treat them as a cloud-free upper bound.
+- Radiation numbers computed here are **idealized clear-sky estimates**
+  (Kasten–Young air mass, Meinel/ASCE attenuation): a cloud-free upper bound,
+  unaffected by haze, altitude or a blocked horizon.
+- **Actual** radiation comes from Open-Meteo's model rather than from that
+  estimate, which is why the two curves can be compared honestly. Where a
+  provider returns no radiation, cloud cover is converted with the
+  Kasten–Czeplak (1980) relation `1 − 0.75·(N/8)^3.4` instead.
+- Weather is a forecast for future dates and a reanalysis for past ones —
+  neither is a station observation at your exact spot.
 
 ## Project layout
 
@@ -99,6 +115,7 @@ js/charts.js      dependency-free SVG charts (line + polar sky dome)
 js/scene.js       scenic mode: sky palette, seasons, landscape renderer
 js/orbit.js       comparison schematics: Earth geometry + to-scale orbit
 js/version.js     version + build date shown in the header badge
+js/weather.js     Open-Meteo forecast/archive fetch + cloud attenuation
 js/app.js         UI state, city search, geolocation, explanations
 tests/            node:test suite for the astronomy math
 ```
@@ -109,7 +126,7 @@ tests/            node:test suite for the astronomy math
 node --test tests/*.mjs
 ```
 
-37 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
+46 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
 reference position, polar day/night, day-length symmetry, air mass and
 clear-sky insolation sanity checks, the scenic sky palette and hemisphere
 seasons, and the comparison schematic's geometry — including a cross-check
@@ -122,4 +139,9 @@ morning/afternoon mirror about noon, the foreshortened toward-viewer shadow at
 solar noon, the hemisphere flip, the long-shadow cap, and no shadow at all once
 the sun is below the horizon. Three more cover the branch generator: that it
 is deterministic, that bigger trees carry more branches than distant ones, and
-that a crown stays taller than it is wide.
+that a crown stays taller than it is wide. Nine more cover weather: the WMO
+code table, the Kasten–Czeplak curve and its clamping, whole-day offsets across
+month ends, which endpoint serves which date range (including the exact
+forecast horizon), pulling a single local day out of a payload without bleed
+from the next one, and summarising a day both with and without provider
+radiation.
