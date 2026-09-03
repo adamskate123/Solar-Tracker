@@ -447,3 +447,42 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .delta-row { grid-template-columns: 1fr; }
   .delta-diff { text-align: left; }
 }
+
+/* ---------- Weather ---------- */
+
+.weather-card { margin-bottom: 14px; }
+.weather-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.weather-head h2 { margin: 0; font-size: 1.05rem; }
+.weather-head .chart-sub { margin: 0; }
+
+.weather-body {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.weather-now { display: flex; align-items: center; gap: 12px; }
+.weather-icon { font-size: 2.4rem; line-height: 1; }
+.weather-now-text { display: flex; flex-direction: column; }
+.weather-label { font-size: 0.85rem; color: var(--text-secondary); }
+.weather-temp { font-size: 1.6rem; font-weight: 600; }
+
+.weather-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px 18px;
+  flex: 1 1 420px;
+}
+.weather-stat { display: flex; flex-direction: column; gap: 1px; }
+.weather-stat-label { font-size: 0.72rem; color: var(--text-secondary); }
+.weather-stat-value { font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.weather-stat-sub { font-size: 0.7rem; color: var(--muted); }
+
+.weather-note {
+  margin: 10px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.weather-note strong { color: var(--text-primary); }

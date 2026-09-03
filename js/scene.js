@@ -28,6 +28,14 @@ function darken(hex, factor) {
   return rgbToHex(r * factor, g * factor, b * factor);
 }
 
+/** Pull a color toward its own luminance — greys it without changing time of day. */
+function desaturate(hex, amount) {
+  const [r, g, b] = hexToRgb(hex);
+  const l = 0.299 * r + 0.587 * g + 0.114 * b;
+  const t = Math.max(0, Math.min(1, amount));
+  return rgbToHex(r + (l - r) * t, g + (l - g) * t, b + (l - b) * t);
+}
+
 export function smoothstep(lo, hi, v) {
   const t = Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
   return t * t * (3 - 2 * t);
@@ -302,6 +310,78 @@ function treeSVG(tree, W, season, landFactor, dayness, sun) {
   return shadow + branches + crown + extra + litter;
 }
 
+/* ---------- weather layers ---------- */
+
+// Fixed cloud placements, so clouds do not jump around as the time changes.
+const CLOUD_SLOTS = [
+  { x: 0.13, y: 0.20, s: 1.05 }, { x: 0.34, y: 0.12, s: 0.82 },
+  { x: 0.52, y: 0.26, s: 1.20 }, { x: 0.70, y: 0.14, s: 0.9 },
+  { x: 0.87, y: 0.24, s: 1.05 }, { x: 0.24, y: 0.34, s: 0.72 },
+  { x: 0.62, y: 0.38, s: 0.66 },
+];
+
+/** How many of the cloud slots a given cover fraction fills. */
+export function cloudSlotCount(cloudPct, slots = CLOUD_SLOTS.length) {
+  const n = Math.max(0, Math.min(100, cloudPct || 0)) / 100;
+  return Math.round(n * slots);
+}
+
+/** Cloud bank for a cover percentage, drawn as overlapping puffs. */
+function cloudsSVG(cloudPct, W, H, sky, dayness) {
+  const count = cloudSlotCount(cloudPct);
+  if (!count) return '';
+  const frac = Math.min(1, cloudPct / 100);
+  // Overcast reads grey and flat; a few fair-weather puffs stay bright.
+  const base = mix(mix('#ffffff', sky.horizon, 0.22), '#98a2ad', frac * 0.55);
+  const lit = darken(base, 0.45 + 0.55 * dayness);
+  const shade = darken(lit, 0.86);
+  const opacity = (0.55 + 0.4 * frac).toFixed(2);
+
+  return CLOUD_SLOTS.slice(0, count).map((c) => {
+    const cx = c.x * W;
+    const cy = c.y * H;
+    const w = 54 * c.s;
+    const h = 15 * c.s;
+    const puffs = [
+      [-w * 0.42, h * 0.18, w * 0.34, h * 0.72],
+      [w * 0.40, h * 0.20, w * 0.31, h * 0.66],
+      [-w * 0.08, -h * 0.28, w * 0.44, h * 1.02],
+      [w * 0.20, -h * 0.06, w * 0.36, h * 0.86],
+    ].map(([dx, dy, rx, ry], i) =>
+      `<ellipse cx="${(cx + dx).toFixed(1)}" cy="${(cy + dy).toFixed(1)}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" fill="${i === 0 ? shade : lit}"/>`
+    ).join('');
+    return `<g opacity="${opacity}">${puffs}</g>`;
+  }).join('');
+}
+
+/** Rain streaks or snow flecks falling across the scene. */
+function precipSVG(group, precipMm, W, horizonY, dayness) {
+  const wet = group === 'rain' || group === 'storm';
+  const snowy = group === 'snow';
+  if (!wet && !snowy) return '';
+  // Intensity from the hourly rate, but always visible once it is raining.
+  const strength = Math.min(1, 0.35 + (precipMm || 0) / 4);
+  const count = Math.round((snowy ? 70 : 90) * strength);
+  const rng = mulberry32(snowy ? 99 : 17);
+  const tint = snowy ? '#ffffff' : '#cfe0f2';
+  const col = darken(tint, 0.5 + 0.5 * dayness);
+  const op = (snowy ? 0.85 : 0.5) * strength;
+
+  let out = '';
+  for (let i = 0; i < count; i++) {
+    const x = rng() * W;
+    const y = rng() * (horizonY + 40);
+    if (snowy) {
+      out += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(1.1 + rng() * 1.3).toFixed(1)}" fill="${col}" opacity="${op.toFixed(2)}"/>`;
+    } else {
+      const len = 7 + rng() * 7;
+      out += `<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x - len * 0.28).toFixed(1)}" y2="${(y + len).toFixed(1)}"`
+        + ` stroke="${col}" stroke-width="1" opacity="${op.toFixed(2)}"/>`;
+    }
+  }
+  return out;
+}
+
 /* ---------- deterministic stars ---------- */
 
 const STARS = (() => {
@@ -328,14 +408,19 @@ export function renderScene(container, model) {
   const horizonY = 190;
 
   const { elevation, azimuth, lat, month } = model;
-  const sky = skyColors(elevation);
+  const wx = model.weather || null;
+  const cloudFrac = wx ? Math.min(1, (wx.cloud || 0) / 100) : 0;
+  // A covered sky loses its color and a little of its light, at any hour.
+  const raw = skyColors(elevation);
+  const grey = (c) => darken(desaturate(c, cloudFrac * 0.8), 1 - 0.18 * cloudFrac);
+  const sky = { top: grey(raw.top), mid: grey(raw.mid), horizon: grey(raw.horizon) };
   const season = seasonFor(month, lat);
   const land = SEASON_LAND[season];
 
   // How "daytime" it is: 0 deep night -> 1 full day. Landscape dims at night.
   const dayness = smoothstep(-8, 8, elevation);
-  const landFactor = 0.22 + 0.78 * dayness;
-  const starOpacity = 1 - smoothstep(-14, -5, elevation);
+  const landFactor = (0.22 + 0.78 * dayness) * (1 - 0.28 * cloudFrac);
+  const starOpacity = (1 - smoothstep(-14, -5, elevation)) * (1 - cloudFrac);
 
   // Sun screen position. Viewer faces the equator, so in the northern
   // hemisphere east is on the left; in the southern, on the right.
@@ -359,8 +444,10 @@ export function renderScene(container, model) {
     ? `<path d="M${W * 0.24},${horizonY - 56} q${W * 0.03},-14 ${W * 0.06},0 q-${W * 0.03},8 -${W * 0.06},0 Z" fill="#ffffff" opacity="${(0.7 * landFactor).toFixed(2)}"/>`
     : '';
 
+  // Direct sun is what casts a shadow, so heavy cloud erases them.
+  const beam = dayness * (1 - cloudFrac ** 1.5);
   const trees = TREES
-    .map((tree) => treeSVG(tree, W, season, landFactor, dayness, { elevation, azimuth, facing }))
+    .map((tree) => treeSVG(tree, W, season, landFactor, beam, { elevation, azimuth, facing }))
     .join('');
 
   container.innerHTML = `
@@ -380,13 +467,17 @@ export function renderScene(container, model) {
     <rect width="${W}" height="${horizonY}" fill="url(#sky-g)"/>
     ${stars}
     ${sunVisible ? `
-      <circle cx="${sunX.toFixed(1)}" cy="${sunY.toFixed(1)}" r="${58 + 30 * glowWarmth}" fill="url(#sun-glow)"/>
-      <circle cx="${sunX.toFixed(1)}" cy="${sunY.toFixed(1)}" r="14" fill="${sunColor}"/>` : ''}
+      <g opacity="${(1 - 0.9 * cloudFrac).toFixed(2)}">
+        <circle cx="${sunX.toFixed(1)}" cy="${sunY.toFixed(1)}" r="${58 + 30 * glowWarmth}" fill="url(#sun-glow)"/>
+        <circle cx="${sunX.toFixed(1)}" cy="${sunY.toFixed(1)}" r="14" fill="${sunColor}"/>
+      </g>` : ''}
+    ${wx ? cloudsSVG(wx.cloud, W, H, sky, dayness) : ''}
     <path d="${hillFar}" fill="${darken(land.far, landFactor)}"/>
     ${snowCaps}
     <path d="${hillNear}" fill="${darken(land.near, landFactor)}"/>
     <rect y="${horizonY}" width="${W}" height="${H - horizonY}" fill="${darken(land.ground, landFactor)}"/>
     ${trees}
+    ${wx ? precipSVG(wx.group, wx.precip, W, horizonY, dayness) : ''}
   </svg>
   <div class="scene-caption">
     <span class="scene-time">${model.timeLabel}</span>
