@@ -55,6 +55,8 @@
         <button id="now-btn" class="ghost-btn" type="button" title="Jump to the current date and time">⏱ Now</button>
         <button id="compare-toggle" class="ghost-btn" type="button" aria-pressed="false"
                 title="Compare two dates side by side">⇄ Compare dates</button>
+        <button id="link-btn" class="ghost-btn" type="button"
+                title="Copy a link to this exact place, date and time">🔗 Copy link</button>
         <label class="live-label"><input id="live-toggle" type="checkbox"> Track live</label>
       </div>
     </div>
@@ -75,6 +77,17 @@
     <div class="tile"><span class="tile-label">Day length</span><span class="tile-value" id="stat-daylength">–</span><span class="tile-sub" id="stat-daylength-sub"></span></div>
     <div class="tile"><span class="tile-label">Clear-sky radiation now</span><span class="tile-value" id="stat-ghi">–</span><span class="tile-sub" id="stat-ghi-sub"></span></div>
     <div class="tile"><span class="tile-label">Clear-sky energy today</span><span class="tile-value" id="stat-insolation">–</span><span class="tile-sub" id="stat-insolation-sub"></span></div>
+  </section>
+
+  <!-- Light through the day -->
+  <section id="light-card" class="card light-card" aria-label="Light through the day">
+    <div class="light-head">
+      <h2>Light through the day</h2>
+      <p class="chart-sub" id="light-sub"></p>
+    </div>
+    <div id="light-bands" class="light-bands"></div>
+    <div id="sun-times" class="sun-times"></div>
+    <p class="light-note" id="light-note"></p>
   </section>
 
   <!-- Weather -->

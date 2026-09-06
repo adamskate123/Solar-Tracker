@@ -17,7 +17,7 @@ const ARCHIVE_URL = 'https://archive-api.open-meteo.com/v1/archive';
 const HOURLY = [
   'temperature_2m', 'apparent_temperature', 'relative_humidity_2m',
   'cloud_cover', 'precipitation', 'weather_code', 'wind_speed_10m',
-  'shortwave_radiation',
+  'shortwave_radiation', 'uv_index', 'uv_index_clear_sky',
 ].join(',');
 const DAILY = [
   'weather_code', 'temperature_2m_max', 'temperature_2m_min',
@@ -127,6 +127,8 @@ export function extractDay(json, date) {
       wind: h.wind_speed_10m?.[i] ?? null,
       code: h.weather_code?.[i] ?? null,
       ghi: h.shortwave_radiation?.[i] ?? null,
+      uv: h.uv_index?.[i] ?? null,
+      uvClear: h.uv_index_clear_sky?.[i] ?? null,
     });
   }
   if (!hours.length) return null;
@@ -146,6 +148,19 @@ export function extractDay(json, date) {
     }
   }
   return { hours, daily };
+}
+
+/**
+ * WHO UV index bands. Reported as guidance, not a personal exposure limit —
+ * time to burn depends on skin type, altitude, surface and medication.
+ */
+export function uvBand(uv) {
+  if (uv == null) return null;
+  if (uv < 3) return { label: 'Low', advice: 'No protection needed for most people.' };
+  if (uv < 6) return { label: 'Moderate', advice: 'Shade around midday; sunscreen if out for long.' };
+  if (uv < 8) return { label: 'High', advice: 'Sunscreen, hat and shade around midday.' };
+  if (uv < 11) return { label: 'Very high', advice: 'Avoid midday sun; sunscreen and cover up.' };
+  return { label: 'Extreme', advice: 'Avoid being outside around midday.' };
 }
 
 /** Mean of the defined values, or null when there are none. */
@@ -171,9 +186,11 @@ export function summarize(day, minutes) {
   const ghiValues = hours.map((h) => h.ghi).filter((v) => typeof v === 'number');
   const actualKWh = ghiValues.length ? ghiValues.reduce((a, b) => a + b, 0) / 1000 : null;
 
+  const uvValues = hours.map((h) => h.uv).filter((v) => typeof v === 'number');
   const code = daily?.code ?? at.code;
   return {
     at,
+    uvMax: uvValues.length ? Math.max(...uvValues) : null,
     condition: describeWeather(code ?? 0),
     cloudMean,
     precipTotal: daily?.precipSum ?? precipTotal,
