@@ -1,6 +1,8 @@
 import {
   sunPosition,
   dayInfo,
+  dayLightPhases,
+  UVB_ELEVATION,
   clearSkyIrradiance,
   dailyInsolation,
   airMass,
@@ -11,7 +13,7 @@ import { renderLineChart, renderSkyDome } from './charts.js';
 import { renderScene } from './scene.js';
 import { globeSVG, orbitSVG, earthOrbitPosition } from './orbit.js';
 import { VERSION, BUILD_DATE } from './version.js';
-import { fetchWeather, summarize, cloudAttenuation } from './weather.js';
+import { fetchWeather, summarize, cloudAttenuation, uvBand } from './weather.js';
 
 /* ---------- presets ---------- */
 
@@ -123,10 +125,85 @@ const state = {
   weather: { status: 'idle', key: '', data: null, summary: null, message: '' },
 };
 
+/**
+ * A link carries the whole view, so any place/date/time can be bookmarked or
+ * sent to someone. URL parameters win over the stored preferences below,
+ * since an explicit link is a stronger signal than "wherever I was last".
+ */
+function applyUrlState() {
+  let params;
+  try {
+    params = new URLSearchParams(window.location.search);
+  } catch { return false; }
+  const num = (k) => {
+    const v = parseFloat(params.get(k));
+    return Number.isFinite(v) ? v : null;
+  };
+  const lat = num('lat');
+  const lon = num('lon');
+  if (lat == null || lon == null) return false;
+
+  state.lat = Math.max(-90, Math.min(90, lat));
+  state.lon = Math.max(-180, Math.min(180, lon));
+  const tz = num('tz');
+  if (tz != null) {
+    state.tz = Math.max(-12, Math.min(14, tz));
+    state.tzZone = null;               // an explicit offset is not a zone
+  }
+  const zone = params.get('zone');
+  if (zone) {
+    state.tzZone = zone;
+    state.tz = zoneOffsetHours(zone, new Date());
+  }
+  const d = (params.get('d') || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (d) state.date = { year: +d[1], month: +d[2], day: +d[3] };
+  const t = num('t');
+  if (t != null) state.minutes = Math.max(0, Math.min(1439, Math.round(t)));
+  const b = (params.get('b') || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (b) state.dateB = { year: +b[1], month: +b[2], day: +b[3] };
+  if (params.get('compare') === '1') state.compare = true;
+  if (params.get('scenic') === '1') state.scenic = true;
+  const place = params.get('place');
+  if (place) state.placeLabel = place.slice(0, 80);
+  const theme = params.get('theme');
+  if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+  return true;
+}
+
+/** Keep the address bar in step without adding history entries. */
+function writeUrl() {
+  try {
+    const p = new URLSearchParams();
+    p.set('lat', state.lat.toFixed(4));
+    p.set('lon', state.lon.toFixed(4));
+    if (state.tzZone) p.set('zone', state.tzZone); else p.set('tz', String(state.tz));
+    p.set('d', `${state.date.year}-${pad2(state.date.month)}-${pad2(state.date.day)}`);
+    p.set('t', String(state.minutes));
+    if (state.placeLabel) p.set('place', state.placeLabel);
+    if (state.compare) {
+      p.set('compare', '1');
+      const b = state.dateB || sixMonthsFrom(state.date);
+      p.set('b', `${b.year}-${pad2(b.month)}-${pad2(b.day)}`);
+    }
+    if (state.scenic) p.set('scenic', '1');
+    const theme = document.documentElement.dataset.theme;
+    if (theme) p.set('theme', theme);
+    window.history.replaceState(null, '', `${window.location.pathname}?${p}`);
+  } catch { /* file:// and some sandboxes refuse replaceState */ }
+}
+
+// Dragging the time slider fires continuously; the address bar can lag behind.
+let urlTimer = null;
+function syncUrl() {
+  clearTimeout(urlTimer);
+  urlTimer = setTimeout(writeUrl, 200);
+}
+
 /* Restore location, theme and scenic preference from the last visit. */
 const STORE_KEY = 'solar-tracker-v1';
+const fromUrl = applyUrlState();
 try {
-  const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+  const saved = fromUrl ? null : JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
   if (saved && Number.isFinite(saved.lat) && Number.isFinite(saved.lon)) {
     state.lat = saved.lat;
     state.lon = saved.lon;
@@ -147,6 +224,7 @@ function persist() {
       theme: document.documentElement.dataset.theme || null,
     }));
   } catch { /* storage unavailable (private mode etc.) */ }
+  syncUrl();
 }
 
 /* ---------- element handles ---------- */
@@ -160,6 +238,7 @@ const els = {
   geoStatus: $('geo-status'), themeToggle: $('theme-toggle'),
   explain: $('explain'), dayChartSub: $('day-chart-sub'),
   scenicToggle: $('scenic-toggle'), scenePanel: $('scene-panel'),
+  linkBtn: $('link-btn'),
   compareToggle: $('compare-toggle'), compareCard: $('compare-card'),
   compareSub: $('compare-sub'), dateALabel: $('date-a-label'),
   dateBGroup: $('date-b-group'), dateB: $('date-b-input'),
@@ -170,6 +249,8 @@ const els = {
   weatherLabel: $('weather-label'), weatherTemp: $('weather-temp'),
   weatherStats: $('weather-stats'), weatherNote: $('weather-note'),
   irrTitle: $('irr-title'), irrSub: $('irr-sub'),
+  lightSub: $('light-sub'), lightBands: $('light-bands'),
+  sunTimes: $('sun-times'), lightNote: $('light-note'),
 };
 
 /* ---------- computation for one render ---------- */
@@ -571,6 +652,201 @@ function updateScene(model) {
   });
 }
 
+/* ---------- light through the day ---------- */
+
+// Band colors run night -> day, so the strip reads as a sky at a glance.
+const LIGHT_BANDS = [
+  { key: 'night',  label: 'Night',                 fill: '#131a2b' },
+  { key: 'astro',  label: 'Astronomical twilight', fill: '#1e2a4d' },
+  { key: 'naut',   label: 'Nautical twilight',     fill: '#2f4272' },
+  { key: 'civil',  label: 'Civil twilight',        fill: '#5b6ea8' },
+  { key: 'day',    label: 'Daylight',              fill: '#8fc0ea' },
+];
+
+/**
+ * Slice the day into light bands. Each phase gives a morning and evening
+ * crossing; between them the sun is higher than that threshold. Polar cases
+ * fall out naturally: a phase the sun never reaches contributes nothing.
+ */
+function lightSegments(phases) {
+  const edges = [
+    ['astro', phases.astronomical],
+    ['naut', phases.nautical],
+    ['civil', phases.civil],
+    ['day', phases.sunrise],
+  ];
+  // Start with the whole day as the darkest band, then carve inward.
+  let segments = [{ key: 'night', from: 0, to: 1440 }];
+  for (const [key, p] of edges) {
+    if (p.state === 'never-reaches') break;          // never gets this bright
+    const from = p.state === 'always-above' ? 0 : Math.max(0, p.morning);
+    const to = p.state === 'always-above' ? 1440 : Math.min(1440, p.evening);
+    if (to <= from) break;
+    segments = segments.flatMap((seg) => {
+      if (seg.to <= from || seg.from >= to) return [seg];
+      const out = [];
+      if (seg.from < from) out.push({ key: seg.key, from: seg.from, to: from });
+      out.push({ key, from: Math.max(seg.from, from), to: Math.min(seg.to, to) });
+      if (seg.to > to) out.push({ key: seg.key, from: to, to: seg.to });
+      return out;
+    });
+  }
+  return segments.filter((sg) => sg.to - sg.from > 0.5);
+}
+
+function renderLightBands(phases, uvb) {
+  const W = 1000;
+  const H = 46;
+  const barH = 26;
+  const X = (m) => (m / 1440) * W;
+  const fillOf = (key) => LIGHT_BANDS.find((b) => b.key === key).fill;
+
+  const bands = lightSegments(phases).map((sg) =>
+    `<rect x="${X(sg.from).toFixed(1)}" y="0" width="${(X(sg.to) - X(sg.from)).toFixed(1)}" height="${barH}" fill="${fillOf(sg.key)}"/>`
+  ).join('');
+
+  // The UV-B window rides as a stripe inside the daylight band.
+  let uvbStripe = '';
+  if (uvb.state === 'crosses' || uvb.state === 'always-above') {
+    const from = uvb.state === 'always-above' ? 0 : uvb.morning;
+    const to = uvb.state === 'always-above' ? 1440 : uvb.evening;
+    uvbStripe = `<rect x="${X(from).toFixed(1)}" y="${barH - 7}" width="${(X(to) - X(from)).toFixed(1)}"`
+      + ` height="6" fill="var(--sun)" opacity="0.95"/>`;
+  }
+
+  const ticks = [0, 6, 12, 18, 24].map((h) => {
+    const x = X(h * 60);
+    const anchor = h === 0 ? 'start' : h === 24 ? 'end' : 'middle';
+    return `<text x="${x.toFixed(1)}" y="${H - 2}" class="band-tick" text-anchor="${anchor}">${pad2(h)}:00</text>`;
+  }).join('');
+
+  const nowX = X(state.minutes);
+  const marker = `<line x1="${nowX.toFixed(1)}" y1="-2" x2="${nowX.toFixed(1)}" y2="${barH + 2}" class="band-marker"/>`;
+
+  els.lightBands.innerHTML =
+    `<svg viewBox="0 -3 ${W} ${H + 3}" role="img" aria-label="Twilight bands through the day, with the UV-B window marked">`
+    + `${bands}${uvbStripe}${marker}${ticks}</svg>`;
+}
+
+function sunTime(label, value, sub, fill) {
+  const wrap = document.createElement('div');
+  wrap.className = 'sun-time';
+  const l = document.createElement('span');
+  l.className = 'sun-time-label';
+  if (fill) {
+    const key = document.createElement('span');
+    key.className = 'sun-time-key';
+    key.style.background = fill;
+    l.appendChild(key);
+  }
+  l.appendChild(document.createTextNode(label));
+  const v = document.createElement('span');
+  v.className = 'sun-time-value';
+  v.textContent = value;
+  wrap.appendChild(l);
+  wrap.appendChild(v);
+  if (sub) {
+    const sEl = document.createElement('span');
+    sEl.className = 'sun-time-sub';
+    sEl.textContent = sub;
+    wrap.appendChild(sEl);
+  }
+  return wrap;
+}
+
+/** Dates bounding the stretch of the year with no UV-B at solar noon. */
+function uvbWinter(model) {
+  const below = model.yearNoon.filter((p) => p.y < UVB_ELEVATION).map((p) => p.x);
+  if (!below.length) return null;                    // sun high enough all year
+  if (below.length === model.yearNoon.length) return 'all-year';
+  const year = state.date.year;
+  // The gap wraps midwinter, so find the run that includes Jan 1 or Dec 31.
+  const set = new Set(below);
+  let start = 1;
+  while (set.has(start)) start++;                    // first day above threshold
+  let d = start;
+  const run = [];
+  for (let i = 0; i < model.yearNoon.length; i++) {
+    d = d % model.yearNoon.length + 1;
+    if (set.has(d)) run.push(d);
+  }
+  if (!run.length) return null;
+  const first = run[0];
+  const last = run[run.length - 1];
+  return {
+    from: doyToDate(year, first),
+    to: doyToDate(year, last),
+    days: run.length,
+  };
+}
+
+function renderLight(model) {
+  const { lat, lon, tz, date } = state;
+  const phases = dayLightPhases(lat, lon, date, tz);
+  renderLightBands(phases, phases.uvb);
+
+  const t = (v) => (v == null ? '—' : fmtClock(v));
+  const noon = model.today.solarNoon;
+
+  els.lightSub.textContent = `${fmtDateLong(date)} · all times local`;
+  els.sunTimes.textContent = '';
+
+  const rows = [
+    ['First light', phases.astronomical.morning, 'astronomical dawn', '#1e2a4d'],
+    ['Dawn', phases.civil.morning, 'civil twilight begins', '#5b6ea8'],
+    ['Sunrise', phases.sunrise.morning, 'upper limb clears the horizon', '#8fc0ea'],
+    ['Golden hour ends', phases.golden.morning, 'sun passes 6°', 'var(--sun)'],
+    ['Solar noon', noon, `sun at ${fmtDeg(model.today.noonElevation)}`, null],
+    ['Golden hour begins', phases.golden.evening, 'sun drops below 6°', 'var(--sun)'],
+    ['Sunset', phases.sunrise.evening, 'upper limb touches the horizon', '#8fc0ea'],
+    ['Dusk', phases.civil.evening, 'civil twilight ends', '#5b6ea8'],
+    ['Last light', phases.astronomical.evening, 'astronomical dusk', '#1e2a4d'],
+  ];
+  for (const [label, value, sub, fill] of rows) {
+    els.sunTimes.appendChild(sunTime(label, t(value), sub, fill));
+  }
+
+  // UV-B / vitamin D window.
+  const uvb = phases.uvb;
+  const uvbValue = uvb.state === 'crosses'
+    ? `${fmtClock(uvb.morning)} – ${fmtClock(uvb.evening)}`
+    : uvb.state === 'always-above' ? 'all day' : 'none today';
+  els.sunTimes.appendChild(sunTime('UV-B window', uvbValue,
+    `sun above ${UVB_ELEVATION}°`, 'var(--sun)'));
+
+  // Notes: the vitamin D story, then UV index when weather is loaded.
+  const winter = uvbWinter(model);
+  const notes = [];
+  if (uvb.state === 'never-reaches') {
+    notes.push(`<strong>The sun stays below ${UVB_ELEVATION}° all day here.</strong> Almost no UV-B `
+      + `reaches the ground at these angles, so sunlight produces essentially no vitamin D on this date — `
+      + `the "vitamin D winter". Sunlight is still worth getting for circadian timing; it just is not doing this job.`);
+  } else {
+    const mins = uvb.state === 'always-above' ? 1440 : uvb.evening - uvb.morning;
+    notes.push(`The sun is above <strong>${UVB_ELEVATION}°</strong> for <strong>${fmtDuration(mins)}</strong> today. `
+      + `Below roughly that angle the atmospheric path is long enough to absorb nearly all UV-B, so this window is `
+      + `when sunlight can drive vitamin D synthesis at all.`);
+  }
+  if (winter && winter !== 'all-year') {
+    notes.push(`Across the year, this location has <strong>${winter.days} days</strong> when the noon sun never `
+      + `reaches ${UVB_ELEVATION}° — roughly ${fmtDateShort(winter.from)} to ${fmtDateShort(winter.to)}.`);
+  } else if (winter === 'all-year') {
+    notes.push(`At this latitude the noon sun never reaches ${UVB_ELEVATION}° on any day of the year.`);
+  }
+
+  const sum = weatherSummary();
+  if (sum && sum.at.uv != null) {
+    const band = uvBand(sum.at.uv);
+    const peak = sum.uvMax != null ? `, peaking at <strong>${sum.uvMax.toFixed(1)}</strong> today` : '';
+    notes.push(`UV index at ${fmtClock(state.minutes)} is <strong>${sum.at.uv.toFixed(1)}</strong> `
+      + `(${band.label})${peak}. ${band.advice}`);
+  }
+  notes.push(`<em>Thresholds are the standard ones and the ${UVB_ELEVATION}° figure is a rule of thumb — `
+    + `real UV-B depends on ozone, altitude, cloud, surface and skin. This is orientation, not medical advice.</em>`);
+
+  els.lightNote.innerHTML = notes.join('</p><p class="light-note">');
+}
+
 /* ---------- weather ---------- */
 
 const cToF = (c) => c * 9 / 5 + 32;
@@ -682,6 +958,12 @@ function renderWeather(model) {
   els.weatherStats.appendChild(weatherStat('Wind',
     sum.at.wind != null ? `${Math.round(sum.at.wind)} km/h` : '—',
     sum.at.humidity != null ? `${Math.round(sum.at.humidity)}% humidity` : ''));
+  if (sum.at.uv != null) {
+    const band = uvBand(sum.at.uv);
+    els.weatherStats.appendChild(weatherStat('UV index',
+      `${sum.at.uv.toFixed(1)} · ${band.label}`,
+      sum.uvMax != null ? `peaks at ${sum.uvMax.toFixed(1)} today` : ''));
+  }
   els.weatherStats.appendChild(weatherStat('Sunshine',
     sum.sunshineHours != null ? `${sum.sunshineHours.toFixed(1)} h` : '—',
     'direct sun on the ground'));
@@ -904,7 +1186,9 @@ function render() {
   updateScene(model);
   renderCompare(model);
   renderWeather(model);
+  renderLight(model);
   labelIrradiance(model);
+  syncUrl();
 }
 
 /** The radiation card means something different once weather is loaded. */
@@ -929,7 +1213,9 @@ function renderTimeOnly() {
   els.timeDisplay.textContent = fmtClock(state.minutes);
   updateScene(model);
   renderWeather(model);
+  renderLight(model);
   labelIrradiance(model);
+  syncUrl();
 }
 
 /* ---------- events ---------- */
@@ -1197,6 +1483,24 @@ els.themeToggle.addEventListener('click', () => {
   root.dataset.theme = current === 'dark' ? 'light' : 'dark';
   render(); // markers/rings read the surface color at draw time in some browsers
   persist();
+});
+
+els.linkBtn.addEventListener('click', async () => {
+  writeUrl();                                   // flush any pending debounce
+  const url = window.location.href;
+  const done = (msg) => {
+    const original = els.linkBtn.textContent;
+    els.linkBtn.textContent = msg;
+    setTimeout(() => { els.linkBtn.textContent = original; }, 1800);
+  };
+  try {
+    await navigator.clipboard.writeText(url);
+    done('✓ Copied');
+  } catch {
+    // Clipboard blocked (insecure origin, permissions) — show it instead.
+    note(`Copy this link: ${url}`);
+    done('Link shown below');
+  }
 });
 
 els.scenicToggle.addEventListener('click', () => {

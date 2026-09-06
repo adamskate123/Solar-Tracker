@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  describeWeather, cloudAttenuation, endpointFor, dayOffset, extractDay, summarize,
+  describeWeather, cloudAttenuation, endpointFor, dayOffset, extractDay, summarize, uvBand,
 } from '../js/weather.js';
 
 const TODAY = { year: 2026, month: 9, day: 2 };
@@ -124,4 +124,35 @@ test('summarize copes with a provider that returns no radiation', () => {
   assert.equal(sum.actualKWh, null);
   assert.equal(sum.hasRadiation, false);
   assert.equal(sum.cloudMean, 50, 'the rest of the summary still works');
+});
+
+test('UV index bands follow the WHO scale', () => {
+  assert.equal(uvBand(0).label, 'Low');
+  assert.equal(uvBand(2.9).label, 'Low');
+  assert.equal(uvBand(3).label, 'Moderate');
+  assert.equal(uvBand(6).label, 'High');
+  assert.equal(uvBand(8).label, 'Very high');
+  assert.equal(uvBand(11).label, 'Extreme');
+  assert.equal(uvBand(null), null);
+  assert.ok(uvBand(7).advice.length > 0, 'each band carries guidance');
+});
+
+test('UV index is requested, extracted and summarised', () => {
+  const ep = endpointFor(TODAY, TODAY);
+  assert.match(ep.url, /uv_index/, 'the request asks for it');
+
+  const json = fakeResponse('2026-09-02');
+  json.hourly.uv_index = json.hourly.time.map((_, h) => (h >= 9 && h <= 15 ? h - 6 : 0));
+  const day = extractDay(json, TODAY);
+  assert.equal(day.hours[12].uv, 6);
+
+  const sum = summarize(day, 12 * 60);
+  assert.equal(sum.at.uv, 6);
+  assert.equal(sum.uvMax, 9, 'peak UV for the day');
+});
+
+test('a payload without UV still summarises cleanly', () => {
+  const sum = summarize(extractDay(fakeResponse('2026-09-02'), TODAY), 12 * 60);
+  assert.equal(sum.at.uv, null);
+  assert.equal(sum.uvMax, null);
 });

@@ -35,6 +35,20 @@ No accounts, no build step, no dependencies: open one HTML file and go.
   daylight, clear-sky energy and declination, and a to-scale orbit inset that
   shows why the 3% change in sun distance is *not* what makes the difference.
   The day charts and sky dome overlay both dates too.
+- **Light through the day** — a twilight strip and the times that go with it:
+  first light, dawn, sunrise, golden hour, solar noon, sunset, dusk, last
+  light. Standard thresholds throughout (civil/nautical/astronomical at
+  −6/−12/−18°, golden hour to +6°), all from one solver, so polar cases report
+  "none today" rather than a wrong number.
+- **UV and the vitamin D window** — UV index and its WHO band from the same
+  weather call, plus the stretch of the day when the sun clears ~30°. Below
+  roughly that angle the atmospheric path absorbs nearly all UV-B, which is why
+  higher latitudes get a **"vitamin D winter"** — the app names its dates for
+  your location (67 days in New York, 286 in Svalbard). Orientation, not
+  medical advice.
+- **🔗 Shareable links** — the URL always carries the current place, date,
+  time, theme and toggles, so any view can be bookmarked or sent. **🔗 Copy
+  link** puts it on the clipboard.
 - **🌦️ Weather** — real conditions for the selected place and date, from the
   free Open-Meteo API. Temperature, cloud cover, precipitation, wind and
   sunshine hours, plus the number this app cares about most: the **actual**
@@ -77,10 +91,13 @@ from `file://` — if yours doesn't, use the one-liner above.
   suggested offset estimated from the longitude.
 - Drag the **time slider** to scrub through the day; **⏱ Now** jumps to the
   current moment; **Track live** keeps following the real sun.
+- Any view is a link. `?lat=40.71&lon=-74.01&tz=-4&d=2026-06-21&t=780` opens
+  New York at 13:00 on the June solstice; `place`, `zone`, `compare`, `b`,
+  `scenic` and `theme` are honoured too, and a link beats stored preferences.
 
 ## Version badge
 
-The header shows the running version (currently `v1.4.0`); hovering it reveals
+The header shows the running version (currently `v1.5.0`); hovering it reveals
 the build date. Use it to confirm a deploy actually took effect — if the badge
 still shows the previous version, the browser or CDN is serving a cached build
 (GitHub Pages caches assets for roughly ten minutes; a hard refresh clears it).
@@ -104,6 +121,9 @@ file is the single source of truth.
   Kasten–Czeplak (1980) relation `1 − 0.75·(N/8)^3.4` instead.
 - Weather is a forecast for future dates and a reanalysis for past ones —
   neither is a station observation at your exact spot.
+- The **30° UV-B threshold** is a rule of thumb. Real UV-B at the surface
+  depends on ozone column, altitude, cloud, ground reflectance and skin type,
+  so treat the vitamin D window as a boundary rather than a dose.
 
 ## Project layout
 
@@ -126,7 +146,7 @@ tests/            node:test suite for the astronomy math
 node --test tests/*.mjs
 ```
 
-46 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
+55 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
 reference position, polar day/night, day-length symmetry, air mass and
 clear-sky insolation sanity checks, the scenic sky palette and hemisphere
 seasons, and the comparison schematic's geometry — including a cross-check
@@ -144,4 +164,8 @@ code table, the Kasten–Czeplak curve and its clamping, whole-day offsets acros
 month ends, which endpoint serves which date range (including the exact
 forecast horizon), pulling a single local day out of a payload without bleed
 from the next one, and summarising a day both with and without provider
-radiation.
+radiation, and the UV band table. Six more cover the light phases: the
+generalised elevation solver reproducing sunrise and sunset exactly, twilight
+thresholds ordering correctly and mirroring about solar noon, polar cases
+reporting `always-above`/`never-reaches` instead of a number, and the UV-B
+window falling inside the daylight window.

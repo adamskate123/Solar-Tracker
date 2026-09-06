@@ -8,6 +8,9 @@ import {
   clearSkyIrradiance,
   dailyInsolation,
   compassPoint,
+  elevationTimes,
+  dayLightPhases,
+  UVB_ELEVATION,
 } from '../js/solar.js';
 
 const close = (a, b, tol, msg) =>
@@ -109,4 +112,68 @@ test('compass points', () => {
   assert.equal(compassPoint(180), 'S');
   assert.equal(compassPoint(359), 'N');
   assert.equal(compassPoint(157.5), 'SSE');
+});
+
+test('the generalised elevation solver reproduces sunrise and sunset exactly', () => {
+  const lat = 40.71;
+  const lon = -74.01;
+  const date = { year: 2026, month: 6, day: 21 };
+  const info = dayInfo(lat, lon, date, -4);
+  const crossing = elevationTimes(lat, lon, date, -4, -0.833);
+  close(crossing.morning, info.sunrise, 1e-9, 'sunrise');
+  close(crossing.evening, info.sunset, 1e-9, 'sunset');
+});
+
+test('twilight thresholds come in the right order', () => {
+  const lat = 51.5;
+  const lon = -0.13;
+  const date = { year: 2026, month: 3, day: 20 };
+  const at = (e) => elevationTimes(lat, lon, date, 0, e);
+  const astro = at(-18).morning;
+  const naut = at(-12).morning;
+  const civil = at(-6).morning;
+  const rise = at(-0.833).morning;
+  const golden = at(6).morning;
+  assert.ok(astro < naut && naut < civil && civil < rise && rise < golden,
+    `expected increasing: ${[astro, naut, civil, rise, golden]}`);
+  // And the evening mirrors it about solar noon.
+  const noon = dayInfo(lat, lon, date, 0).solarNoon;
+  close(noon - astro, at(-18).evening - noon, 1e-9, 'symmetry about solar noon');
+});
+
+test('the solver reports polar cases instead of returning nonsense', () => {
+  // Midsummer above the arctic circle: never dark enough for any twilight.
+  assert.equal(elevationTimes(78.2, 15.6, { year: 2026, month: 6, day: 21 }, 2, -6).state, 'always-above');
+  // Midwinter: never bright enough to reach the UV-B threshold.
+  assert.equal(elevationTimes(78.2, 15.6, { year: 2026, month: 12, day: 21 }, 1, 30).state, 'never-reaches');
+  const polar = elevationTimes(78.2, 15.6, { year: 2026, month: 12, day: 21 }, 1, 30);
+  assert.equal(polar.morning, null);
+  assert.equal(polar.evening, null);
+});
+
+test('the UV-B window sits inside the daylight window', () => {
+  const lat = 40.71;
+  const lon = -74.01;
+  const date = { year: 2026, month: 6, day: 21 };
+  const info = dayInfo(lat, lon, date, -4);
+  const uvb = elevationTimes(lat, lon, date, -4, UVB_ELEVATION);
+  assert.equal(uvb.state, 'crosses');
+  assert.ok(uvb.morning > info.sunrise, 'starts after sunrise');
+  assert.ok(uvb.evening < info.sunset, 'ends before sunset');
+});
+
+test('no UV-B window in a northern midwinter, but one in midsummer', () => {
+  const lat = 45;
+  const winter = elevationTimes(lat, 0, { year: 2026, month: 12, day: 21 }, 0, UVB_ELEVATION);
+  const summer = elevationTimes(lat, 0, { year: 2026, month: 6, day: 21 }, 0, UVB_ELEVATION);
+  assert.equal(winter.state, 'never-reaches', 'noon sun at 45N in December is only ~21 degrees');
+  assert.equal(summer.state, 'crosses');
+});
+
+test('dayLightPhases returns every named phase', () => {
+  const phases = dayLightPhases(40.71, -74.01, { year: 2026, month: 9, day: 21 }, -4);
+  for (const key of ['astronomical', 'nautical', 'civil', 'blue', 'sunrise', 'golden', 'uvb']) {
+    assert.ok(phases[key], `missing ${key}`);
+    assert.ok(['crosses', 'always-above', 'never-reaches'].includes(phases[key].state));
+  }
 });

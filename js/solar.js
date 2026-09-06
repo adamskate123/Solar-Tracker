@@ -179,6 +179,64 @@ export function dayInfo(lat, lon, date, tzOffset) {
 }
 
 /**
+ * Local times when the sun crosses a given elevation, morning and evening.
+ *
+ * This is the same hour-angle solution sunrise/sunset uses, generalised to any
+ * threshold — so the twilights, the golden hour and the UV-B window all come
+ * from one place instead of three near-copies.
+ *
+ * @param {number} elevationDeg the elevation to cross, e.g. -6 for civil dusk
+ * @returns {{state:'crosses'|'always-above'|'never-reaches',
+ *            morning:number|null, evening:number|null}}
+ *   times in minutes after local midnight; null when the sun stays entirely
+ *   above ('always-above') or entirely below ('never-reaches') the threshold.
+ */
+export function elevationTimes(lat, lon, date, tzOffset, elevationDeg) {
+  const jdNoon = julianDay(date.year, date.month, date.day) + (12 - tzOffset) / 24;
+  const { declination, eqOfTimeMin } = solarGeometry(jdNoon);
+  const solarNoon = 720 - 4 * lon - eqOfTimeMin + 60 * tzOffset;
+
+  const zenith = 90 - elevationDeg;
+  const cosHA =
+    (Math.cos(zenith * RAD) - Math.sin(lat * RAD) * Math.sin(declination * RAD)) /
+    (Math.cos(lat * RAD) * Math.cos(declination * RAD));
+
+  if (cosHA > 1) return { state: 'never-reaches', morning: null, evening: null };
+  if (cosHA < -1) return { state: 'always-above', morning: null, evening: null };
+  const ha = Math.acos(cosHA) * DEG;
+  return { state: 'crosses', morning: solarNoon - ha * 4, evening: solarNoon + ha * 4 };
+}
+
+/**
+ * Solar elevation above which meaningful cutaneous vitamin D synthesis can
+ * happen. Below roughly this angle the atmospheric path is long enough that
+ * almost no UV-B (290-315nm) reaches the ground, which is what produces the
+ * "vitamin D winter" at higher latitudes. The exact figure varies with ozone,
+ * altitude, surface and skin, so treat it as a boundary, not a promise.
+ */
+export const UVB_ELEVATION = 30;
+
+/**
+ * Every named light phase of one day, from one solver.
+ *
+ * Golden and blue hour follow the common photographic definitions (golden
+ * -4 to +6 degrees, blue -6 to -4); the twilights follow the standard
+ * -6 / -12 / -18 boundaries.
+ */
+export function dayLightPhases(lat, lon, date, tzOffset) {
+  const at = (e) => elevationTimes(lat, lon, date, tzOffset, e);
+  return {
+    astronomical: at(-18),
+    nautical: at(-12),
+    civil: at(-6),
+    blue: at(-4),
+    sunrise: at(-0.833),
+    golden: at(6),
+    uvb: at(UVB_ELEVATION),
+  };
+}
+
+/**
  * Relative air mass for an apparent elevation (deg), Kasten & Young (1989).
  * Returns Infinity when the sun is below the horizon.
  */
