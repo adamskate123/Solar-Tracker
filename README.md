@@ -35,6 +35,21 @@ No accounts, no build step, no dependencies: open one HTML file and go.
   daylight, clear-sky energy and declination, and a to-scale orbit inset that
   shows why the 3% change in sun distance is *not* what makes the difference.
   The day charts and sky dome overlay both dates too.
+- **☀️ Solar panel modelling** — enter a tilt, a facing and an array size and
+  get the annual clear-sky energy on that plane, computed by **Hay–Davies
+  transposition** (direct beam by incidence angle, diffuse split into
+  circumsolar and isotropic parts, plus ground reflection). **✦ Use optimum**
+  searches tilt and azimuth for the best fixed orientation at your site —
+  37° facing south in New York, due north in Sydney, nearly flat on the
+  equator — and a chart shows yield against tilt for your facing beside the
+  best one.
+- **Horizon & obstructions** — give the elevation of whatever blocks the sky in
+  each of twelve directions (a ridge, a roof, a tree line). It's drawn on the
+  sky-dome chart, where sun paths disappear behind it, the direct beam is cut
+  whenever the sun sits below it, diffuse is thinned by the sky view factor,
+  and the optimiser accounts for it — a south-western ridge in New York swings
+  the best orientation from 180° to 156°, east of south and away from the
+  obstruction.
 - **Light through the day** — a twilight strip and the times that go with it:
   first light, dawn, sunrise, golden hour, solar noon, sunset, dusk, last
   light. Standard thresholds throughout (civil/nautical/astronomical at
@@ -97,7 +112,7 @@ from `file://` — if yours doesn't, use the one-liner above.
 
 ## Version badge
 
-The header shows the running version (currently `v1.5.0`); hovering it reveals
+The header shows the running version (currently `v1.6.0`); hovering it reveals
 the build date. Use it to confirm a deploy actually took effect — if the badge
 still shows the previous version, the browser or CDN is serving a cached build
 (GitHub Pages caches assets for roughly ten minutes; a hard refresh clears it).
@@ -121,6 +136,11 @@ file is the single source of truth.
   Kasten–Czeplak (1980) relation `1 − 0.75·(N/8)^3.4` instead.
 - Weather is a forecast for future dates and a reanalysis for past ones —
   neither is a station observation at your exact spot.
+- **Panel yield is modelled clear-sky**, so it answers "which way should this
+  face" — geometry, which is what orientation depends on — rather than "how
+  much will it make", which needs a year of local cloud. Array output applies a
+  flat 80% derate for inverter, wiring, temperature and soiling; a real quote
+  will differ. Row-to-row shading and panel temperature are not modelled.
 - The **30° UV-B threshold** is a rule of thumb. Real UV-B at the surface
   depends on ozone column, altitude, cloud, ground reflectance and skin type,
   so treat the vitamin D window as a boundary rather than a dose.
@@ -136,6 +156,7 @@ js/scene.js       scenic mode: sky palette, seasons, landscape renderer
 js/orbit.js       comparison schematics: Earth geometry + to-scale orbit
 js/version.js     version + build date shown in the header badge
 js/weather.js     Open-Meteo forecast/archive fetch + cloud attenuation
+js/panel.js       plane-of-array irradiance, horizon profile, orientation search
 js/app.js         UI state, city search, geolocation, explanations
 tests/            node:test suite for the astronomy math
 ```
@@ -146,7 +167,7 @@ tests/            node:test suite for the astronomy math
 node --test tests/*.mjs
 ```
 
-55 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
+70 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
 reference position, polar day/night, day-length symmetry, air mass and
 clear-sky insolation sanity checks, the scenic sky palette and hemisphere
 seasons, and the comparison schematic's geometry — including a cross-check
@@ -168,4 +189,10 @@ radiation, and the UV band table. Six more cover the light phases: the
 generalised elevation solver reproducing sunrise and sunset exactly, twilight
 thresholds ordering correctly and mirroring about solar noon, polar cases
 reporting `always-above`/`never-reaches` instead of a number, and the UV-B
-window falling inside the daylight window.
+window falling inside the daylight window. Fifteen more cover the panel model:
+that a horizontal plane receives exactly GHI (the transposition's own
+consistency check), that a panel aimed at the sun has zero incidence angle,
+sky view factor at its limits, terrain cutting the beam but not the diffuse,
+and that the orientation search lands near the latitude facing the equator —
+north of the equator, south of it, flat on it, and swung away from an
+obstruction.
