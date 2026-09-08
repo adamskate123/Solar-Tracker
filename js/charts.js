@@ -404,6 +404,27 @@ export function renderSkyDome(container, config) {
       }));
     }
 
+    // Terrain is drawn over the sun paths, so anything behind a ridge is
+    // hidden exactly as it would be from the ground.
+    if (cfg.horizon && cfg.horizon.some((h) => h > 0.05)) {
+      const outer = `M${(cx - R).toFixed(1)},${cy.toFixed(1)}`
+        + ` A${R},${R} 0 1,0 ${(cx + R).toFixed(1)},${cy.toFixed(1)}`
+        + ` A${R},${R} 0 1,0 ${(cx - R).toFixed(1)},${cy.toFixed(1)} Z`;
+      let inner = '';
+      for (let a = 0; a <= 360; a += 3) {
+        const n = cfg.horizon.length;
+        const step = 360 / n;
+        const i = Math.floor((a % 360) / step);
+        const t = ((a % 360) - i * step) / step;
+        const h = (cfg.horizon[i % n] || 0) + ((cfg.horizon[(i + 1) % n] || 0) - (cfg.horizon[i % n] || 0)) * t;
+        const [x, y] = P(a, Math.max(0, Math.min(90, h)));
+        inner += `${inner ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`;
+      }
+      svg.appendChild(svgEl('path', {
+        d: `${outer} ${inner} Z`, 'fill-rule': 'evenodd', class: 'dome-terrain',
+      }));
+    }
+
     for (const hm of cfg.hourMarks || []) {
       if (hm.elevation < 0) continue;
       const [x, y] = P(hm.azimuth, hm.elevation);

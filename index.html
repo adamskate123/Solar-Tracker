@@ -109,6 +109,64 @@
     <p class="weather-note" id="weather-note" hidden></p>
   </section>
 
+  <!-- Solar panel -->
+  <section id="panel-card" class="card panel-card" aria-label="Solar panel modelling">
+    <div class="panel-head">
+      <h2>Solar panel</h2>
+      <p class="chart-sub" id="panel-sub"></p>
+    </div>
+
+    <div class="panel-controls">
+      <div class="control-group">
+        <label for="panel-tilt">Tilt from horizontal</label>
+        <input id="panel-tilt" type="number" min="0" max="90" step="1" value="35">
+      </div>
+      <div class="control-group">
+        <label for="panel-azimuth">Facing (° from north)</label>
+        <input id="panel-azimuth" type="number" min="0" max="360" step="1" value="180">
+      </div>
+      <div class="control-group">
+        <label for="panel-size">Array size (kW)</label>
+        <input id="panel-size" type="number" min="0.1" max="1000" step="0.1" value="5">
+      </div>
+      <div class="control-group">
+        <label for="panel-albedo">Ground albedo</label>
+        <input id="panel-albedo" type="number" min="0" max="1" step="0.05" value="0.2">
+      </div>
+      <div class="control-group control-actions">
+        <label>&nbsp;</label>
+        <div class="btn-row">
+          <button id="panel-optimum" class="ghost-btn" type="button"
+                  title="Set tilt and facing to the annual best for this site">✦ Use optimum</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-results" id="panel-results"></div>
+
+    <div class="card chart-card panel-chart">
+      <h3>Annual yield against tilt</h3>
+      <p class="chart-sub" id="tilt-chart-sub"></p>
+      <div id="tilt-chart"></div>
+    </div>
+
+    <details class="horizon-editor">
+      <summary>Horizon &amp; obstructions</summary>
+      <p class="horizon-help">
+        Height in degrees of whatever blocks the sky in each direction — a ridge, a roof,
+        a tree line. Roughly: hold your arm out, a fist at arm's length is about 10°.
+        The obstruction is drawn on the sky-dome chart, and the sun is treated as hidden
+        whenever it sits behind it.
+      </p>
+      <div id="horizon-inputs" class="horizon-inputs"></div>
+      <div class="btn-row horizon-actions">
+        <button id="horizon-clear" class="ghost-btn" type="button">Clear all</button>
+      </div>
+    </details>
+
+    <p class="panel-note" id="panel-note"></p>
+  </section>
+
   <!-- Two-date comparison schematic -->
   <section id="compare-card" class="card compare-card" hidden aria-label="Two-date comparison">
     <div class="compare-head">

@@ -519,3 +519,81 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .light-note strong { color: var(--text-primary); }
 .light-note + .light-note { margin-top: 6px; }
+
+/* ---------- Solar panel ---------- */
+
+.panel-card { margin-bottom: 14px; }
+.panel-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.panel-head h2 { margin: 0; font-size: 1.05rem; }
+.panel-head .chart-sub { margin: 0; }
+
+.panel-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  align-items: end;
+  margin: 12px 0 4px;
+}
+.panel-controls .control-group input { width: 116px; }
+
+.panel-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 14px 0 4px;
+}
+.panel-result {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--page);
+}
+.panel-result-label { font-size: 0.72rem; color: var(--text-secondary); }
+.panel-result-value { font-size: 1.2rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.panel-result-sub { font-size: 0.7rem; color: var(--muted); }
+.panel-result.is-best { border-color: var(--accent); }
+.panel-result.is-best .panel-result-value { color: var(--accent); }
+
+.panel-chart { margin-top: 12px; }
+.panel-chart h3 { margin: 0 0 2px; font-size: 0.95rem; }
+
+.horizon-editor { margin-top: 14px; font-size: 0.85rem; }
+.horizon-editor summary { cursor: pointer; color: var(--text-secondary); }
+.horizon-help { margin: 8px 0; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.55; }
+.horizon-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 8px;
+}
+.horizon-cell { display: flex; flex-direction: column; gap: 2px; }
+.horizon-cell label { font-size: 0.7rem; color: var(--text-secondary); }
+.horizon-cell input {
+  font: inherit;
+  font-size: 0.85rem;
+  width: 100%;
+  color: var(--text-primary);
+  background: var(--page);
+  border: 1px solid var(--axis);
+  border-radius: 7px;
+  padding: 4px 6px;
+}
+.horizon-actions { margin-top: 10px; }
+
+.panel-note {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.panel-note strong { color: var(--text-primary); }
+
+.chart-host .dome-terrain {
+  fill: var(--text-secondary);
+  fill-opacity: 0.55;
+  stroke: var(--text-secondary);
+  stroke-width: 1;
+  stroke-opacity: 0.8;
+}

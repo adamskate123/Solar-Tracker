@@ -14,6 +14,10 @@ import { renderScene } from './scene.js';
 import { globeSVG, orbitSVG, earthOrbitPosition } from './orbit.js';
 import { VERSION, BUILD_DATE } from './version.js';
 import { fetchWeather, summarize, cloudAttenuation, uvBand } from './weather.js';
+import {
+  sunSamples, annualPOA, optimizeOrientation, poaIrradiance,
+  flatHorizon, horizonAzimuths, skyViewFactor, HORIZON_SECTORS,
+} from './panel.js';
 
 /* ---------- presets ---------- */
 
@@ -123,6 +127,7 @@ const state = {
   placeLabel: '',
   // status: idle | loading | ok | out-of-range | error
   weather: { status: 'idle', key: '', data: null, summary: null, message: '' },
+  panel: { tilt: 35, azimuth: 180, sizeKw: 5, albedo: 0.2, horizon: flatHorizon() },
 };
 
 /**
@@ -211,6 +216,15 @@ try {
     state.tz = state.tzZone ? zoneOffsetHours(state.tzZone, initialNow) : (Number.isFinite(saved.tz) ? saved.tz : state.tz);
     state.scenic = !!saved.scenic;
     state.compare = !!saved.compare;
+    if (saved.panel) {
+      state.panel = {
+        ...state.panel,
+        ...saved.panel,
+        horizon: Array.isArray(saved.panel.horizon) && saved.panel.horizon.length === HORIZON_SECTORS
+          ? saved.panel.horizon.map((h) => Math.max(0, Math.min(90, Number(h) || 0)))
+          : flatHorizon(),
+      };
+    }
     state.placeLabel = saved.placeLabel || '';
     if (saved.theme) document.documentElement.dataset.theme = saved.theme;
   }
@@ -221,6 +235,7 @@ function persist() {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       lat: state.lat, lon: state.lon, tz: state.tz, tzZone: state.tzZone,
       scenic: state.scenic, compare: state.compare, placeLabel: state.placeLabel,
+      panel: state.panel,
       theme: document.documentElement.dataset.theme || null,
     }));
   } catch { /* storage unavailable (private mode etc.) */ }
@@ -251,6 +266,11 @@ const els = {
   irrTitle: $('irr-title'), irrSub: $('irr-sub'),
   lightSub: $('light-sub'), lightBands: $('light-bands'),
   sunTimes: $('sun-times'), lightNote: $('light-note'),
+  panelSub: $('panel-sub'), panelTilt: $('panel-tilt'), panelAzimuth: $('panel-azimuth'),
+  panelSize: $('panel-size'), panelAlbedo: $('panel-albedo'),
+  panelOptimum: $('panel-optimum'), panelResults: $('panel-results'),
+  panelNote: $('panel-note'), tiltChartSub: $('tilt-chart-sub'),
+  horizonInputs: $('horizon-inputs'), horizonClear: $('horizon-clear'),
 };
 
 /* ---------- computation for one render ---------- */
@@ -398,6 +418,7 @@ function domeConfig(model) {
     paths,
     sun: { azimuth: model.now.azimuth, elevation: model.now.apparentElevation },
     hourMarks,
+    horizon: state.panel.horizon,
   };
 }
 
@@ -650,6 +671,191 @@ function updateScene(model) {
     dateLabel: `${MONTHS[state.date.month - 1]} ${state.date.day}${state.placeLabel ? ' · ' + state.placeLabel : ''}`,
     sunNote: sum ? `${sum.condition.icon} ${sum.condition.label} · ${sunNote}` : sunNote,
   });
+}
+
+/* ---------- solar panel ---------- */
+
+const COMPASS_12 = ['N', 'NNE', 'ENE', 'E', 'ESE', 'SSE', 'S', 'SSW', 'WSW', 'W', 'WNW', 'NNW'];
+
+/**
+ * A year of sun positions and the orientation search over them are expensive
+ * relative to a redraw, and neither depends on the time of day. Cache both,
+ * keyed by everything that actually changes the answer, so scrubbing the
+ * slider never pays for them.
+ */
+let panelCache = { key: '', samples: null, best: null };
+
+function panelModel() {
+  const { lat, lon, tz, panel } = state;
+  const key = [
+    lat.toFixed(3), lon.toFixed(3), tz, panel.albedo, panel.horizon.join(','),
+  ].join('|');
+  if (panelCache.key === key) return panelCache;
+
+  const samples = sunSamples(lat, lon, tz, { dayStep: 4, minuteStep: 30 });
+  const best = optimizeOrientation(samples, { albedo: panel.albedo, horizon: panel.horizon });
+  panelCache = { key, samples, best };
+  return panelCache;
+}
+
+/** Panels lose some of the sunlight they catch; this is the usual rule of thumb. */
+const SYSTEM_EFFICIENCY = 0.8;
+
+function panelResult(label, value, sub, isBest = false) {
+  const wrap = document.createElement('div');
+  wrap.className = `panel-result${isBest ? ' is-best' : ''}`;
+  const l = document.createElement('span');
+  l.className = 'panel-result-label';
+  l.textContent = label;
+  const v = document.createElement('span');
+  v.className = 'panel-result-value';
+  v.textContent = value;
+  wrap.appendChild(l);
+  wrap.appendChild(v);
+  if (sub) {
+    const sEl = document.createElement('span');
+    sEl.className = 'panel-result-sub';
+    sEl.textContent = sub;
+    wrap.appendChild(sEl);
+  }
+  return wrap;
+}
+
+function buildHorizonInputs() {
+  els.horizonInputs.textContent = '';
+  horizonAzimuths().forEach((az, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'horizon-cell';
+    const id = `horizon-${i}`;
+    const label = document.createElement('label');
+    label.setAttribute('for', id);
+    label.textContent = `${COMPASS_12[i]} (${az}°)`;
+    const input = document.createElement('input');
+    input.id = id;
+    input.type = 'number';
+    input.min = '0';
+    input.max = '90';
+    input.step = '1';
+    input.value = String(state.panel.horizon[i] ?? 0);
+    input.addEventListener('change', () => {
+      const v = parseFloat(input.value);
+      state.panel.horizon[i] = Number.isFinite(v) ? Math.max(0, Math.min(90, v)) : 0;
+      input.value = String(state.panel.horizon[i]);
+      render();
+      persist();
+    });
+    cell.appendChild(label);
+    cell.appendChild(input);
+    els.horizonInputs.appendChild(cell);
+  });
+}
+
+let tiltChart = null;
+
+function renderPanel(model) {
+  const { panel } = state;
+  const { samples, best } = panelModel();
+
+  const here = annualPOA(samples, {
+    tilt: panel.tilt, panelAzimuth: panel.azimuth,
+    albedo: panel.albedo, horizon: panel.horizon,
+  });
+  const horizontal = annualPOA(samples, {
+    tilt: 0, panelAzimuth: 180, albedo: panel.albedo, horizon: panel.horizon,
+  });
+  // What the same orientation would collect with nothing in the way.
+  const unobstructed = annualPOA(samples, {
+    tilt: panel.tilt, panelAzimuth: panel.azimuth, albedo: panel.albedo, horizon: null,
+  });
+
+  const kwhYear = here * panel.sizeKw * SYSTEM_EFFICIENCY;
+  const vsFlat = horizontal > 0 ? ((here / horizontal) - 1) * 100 : 0;
+  const ofBest = best.annual > 0 ? (here / best.annual) * 100 : 0;
+  const shadeLoss = unobstructed > 0 ? (1 - here / unobstructed) * 100 : 0;
+
+  els.panelSub.textContent =
+    `${panel.tilt}° tilt facing ${Math.round(panel.azimuth)}° (${compassPoint(panel.azimuth)}) `
+    + `at ${state.lat.toFixed(2)}°, ${state.lon.toFixed(2)}° — clear-sky model`;
+
+  els.panelResults.textContent = '';
+  els.panelResults.appendChild(panelResult('On the panel',
+    `${Math.round(here)} kWh/m²`, 'per year, clear sky'));
+  els.panelResults.appendChild(panelResult(`Array output (${panel.sizeKw} kW)`,
+    `${Math.round(kwhYear).toLocaleString()} kWh`,
+    `per year at ${Math.round(SYSTEM_EFFICIENCY * 100)}% system efficiency`));
+  els.panelResults.appendChild(panelResult('vs lying flat',
+    `${vsFlat >= 0 ? '+' : ''}${vsFlat.toFixed(1)}%`,
+    `flat collects ${Math.round(horizontal)} kWh/m²`));
+  els.panelResults.appendChild(panelResult('Best possible here',
+    `${best.tilt.toFixed(0)}° / ${Math.round(best.azimuth)}° ${compassPoint(best.azimuth)}`,
+    `${Math.round(best.annual)} kWh/m² — you are at ${ofBest.toFixed(1)}% of it`, true));
+  if (shadeLoss > 0.05) {
+    els.panelResults.appendChild(panelResult('Lost to obstructions',
+      `−${shadeLoss.toFixed(1)}%`, `sky view ${Math.round(skyViewFactor(panel.horizon) * 100)}%`));
+  }
+
+  // Yield against tilt at the winning orientation.
+  const atBestAz = best.curve;
+  const atYourAz = [];
+  for (let tilt = 0; tilt <= 90; tilt += 5) {
+    atYourAz.push({
+      x: tilt,
+      y: annualPOA(samples, {
+        tilt, panelAzimuth: panel.azimuth, albedo: panel.albedo, horizon: panel.horizon,
+      }),
+    });
+  }
+  const yMax = Math.ceil(Math.max(...atBestAz.map((p) => p.y)) / 200) * 200;
+  // Signed difference in [-180, 180); near zero means the two point the same way.
+  const azimuthDiff = ((((panel.azimuth - best.azimuth) % 360) + 540) % 360) - 180;
+  const sameAzimuth = Math.abs(azimuthDiff) < 2;
+  const tiltCfg = {
+    ariaLabel: 'Annual clear-sky energy on the panel against tilt angle',
+    series: sameAzimuth
+      ? [{ name: `Facing ${Math.round(best.azimuth)}°`, colorVar: '--series-1', points: atBestAz, area: true }]
+      : [
+          { name: `Facing ${Math.round(panel.azimuth)}° (yours)`, colorVar: '--series-1', points: atYourAz, area: true },
+          { name: `Facing ${Math.round(best.azimuth)}° (best)`, colorVar: '--series-2', points: atBestAz, dash: '5 4' },
+        ],
+    xDomain: [0, 90],
+    yDomain: [0, Math.max(yMax, 100)],
+    xTicks: [0, 15, 30, 45, 60, 75, 90].map((v) => ({ v, label: `${v}°` })),
+    yLabel: 'kWh/m²/yr',
+    formatX: (x) => `${x.toFixed(0)}° tilt`,
+    formatY: (y) => `${Math.round(y)} kWh/m²`,
+    markers: [{ x: panel.tilt, y: annualPOA(samples, {
+      tilt: panel.tilt, panelAzimuth: panel.azimuth, albedo: panel.albedo, horizon: panel.horizon,
+    }), colorVar: '--sun' }],
+    tableCaption: 'Tilt',
+    tableSampleEvery: 1,
+  };
+  if (!tiltChart) tiltChart = renderLineChart($('tilt-chart'), tiltCfg);
+  else tiltChart.update(tiltCfg);
+
+  els.tiltChartSub.textContent = sameAzimuth
+    ? 'Your panel already faces the best direction, so this is the only curve that matters.'
+    : 'Your facing against the best one — the gap between the curves is what re-aiming would buy.';
+
+  // Narrative.
+  const notes = [];
+  const seasonHint = state.lat >= 0 ? 'south' : 'north';
+  notes.push(`The best fixed orientation here is <strong>${best.tilt.toFixed(0)}° tilt facing `
+    + `${Math.round(best.azimuth)}° (${compassPoint(best.azimuth)})</strong>, collecting `
+    + `<strong>${Math.round(best.annual)} kWh/m²</strong> a year of clear-sky energy. `
+    + `That is the search result, not the ${seasonHint}-facing rule of thumb — with an obstructed `
+    + `horizon the two can differ.`);
+  if (ofBest < 99.5) {
+    notes.push(`Your current setting gives up <strong>${(100 - ofBest).toFixed(1)}%</strong> against that, `
+      + `about ${Math.round(Math.max(0, (best.annual - here) * panel.sizeKw * SYSTEM_EFFICIENCY))} kWh a year `
+      + `for a ${panel.sizeKw} kW array.`);
+  } else {
+    notes.push(`Your current setting is within half a percent of the best available here.`);
+  }
+  notes.push('<em>This is a clear-sky model. It answers &ldquo;which way should this face&rdquo;, '
+    + 'which is geometry, rather than &ldquo;how much will it make&rdquo;, which needs local cloud. '
+    + `Array output applies a flat ${Math.round(SYSTEM_EFFICIENCY * 100)}% derate for inverter, wiring, `
+    + 'temperature and soiling — a real quote will differ.</em>');
+  els.panelNote.innerHTML = notes.join('</p><p class="panel-note">');
 }
 
 /* ---------- light through the day ---------- */
@@ -1187,6 +1393,7 @@ function render() {
   renderCompare(model);
   renderWeather(model);
   renderLight(model);
+  renderPanel(model);
   labelIrradiance(model);
   syncUrl();
 }
@@ -1485,6 +1692,46 @@ els.themeToggle.addEventListener('click', () => {
   persist();
 });
 
+function readPanelInputs() {
+  const num = (input, lo, hi, fallback) => {
+    const v = parseFloat(input.value);
+    return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback;
+  };
+  state.panel.tilt = num(els.panelTilt, 0, 90, state.panel.tilt);
+  state.panel.azimuth = ((num(els.panelAzimuth, -360, 720, state.panel.azimuth) % 360) + 360) % 360;
+  state.panel.sizeKw = num(els.panelSize, 0.1, 1000, state.panel.sizeKw);
+  state.panel.albedo = num(els.panelAlbedo, 0, 1, state.panel.albedo);
+  els.panelTilt.value = String(state.panel.tilt);
+  els.panelAzimuth.value = String(Math.round(state.panel.azimuth));
+  els.panelSize.value = String(state.panel.sizeKw);
+  els.panelAlbedo.value = String(state.panel.albedo);
+}
+
+for (const input of [els.panelTilt, els.panelAzimuth, els.panelSize, els.panelAlbedo]) {
+  input.addEventListener('change', () => {
+    readPanelInputs();
+    render();
+    persist();
+  });
+}
+
+els.panelOptimum.addEventListener('click', () => {
+  const { best } = panelModel();
+  state.panel.tilt = Math.round(best.tilt * 2) / 2;
+  state.panel.azimuth = Math.round(best.azimuth);
+  els.panelTilt.value = String(state.panel.tilt);
+  els.panelAzimuth.value = String(state.panel.azimuth);
+  render();
+  persist();
+});
+
+els.horizonClear.addEventListener('click', () => {
+  state.panel.horizon = flatHorizon();
+  buildHorizonInputs();
+  render();
+  persist();
+});
+
 els.linkBtn.addEventListener('click', async () => {
   writeUrl();                                   // flush any pending debounce
   const url = window.location.href;
@@ -1515,6 +1762,12 @@ const badge = $('version-badge');
 badge.textContent = `v${VERSION}`;
 badge.title = `Solar Tracker v${VERSION} — built ${BUILD_DATE}`;
 window.SOLAR_TRACKER_VERSION = { version: VERSION, buildDate: BUILD_DATE };
+
+els.panelTilt.value = String(state.panel.tilt);
+els.panelAzimuth.value = String(Math.round(state.panel.azimuth));
+els.panelSize.value = String(state.panel.sizeKw);
+els.panelAlbedo.value = String(state.panel.albedo);
+buildHorizonInputs();
 
 syncControls();
 render();
