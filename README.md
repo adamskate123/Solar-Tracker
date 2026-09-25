@@ -34,7 +34,10 @@ No accounts, no build step, no dependencies: open one HTML file and go.
   sun angle drawn at your position), a delta readout for noon elevation,
   daylight, clear-sky energy and declination, and a to-scale orbit inset that
   shows why the 3% change in sun distance is *not* what makes the difference.
-  The day charts and sky dome overlay both dates too.
+  The day charts and sky dome overlay both dates too, and **every stat tile at
+  the top gains a second line** carrying date B's value and the difference —
+  so the headline numbers compare at a glance without scrolling to the
+  schematic.
 - **☀️ Solar panel modelling** — enter a tilt, a facing and an array size and
   get the annual clear-sky energy on that plane, computed by **Hay–Davies
   transposition** (direct beam by incidence angle, diffuse split into
@@ -112,7 +115,7 @@ from `file://` — if yours doesn't, use the one-liner above.
 
 ## Version badge
 
-The header shows the running version (currently `v1.6.0`); hovering it reveals
+The header shows the running version (currently `v1.7.0`); hovering it reveals
 the build date. Use it to confirm a deploy actually took effect — if the badge
 still shows the previous version, the browser or CDN is serving a cached build
 (GitHub Pages caches assets for roughly ten minutes; a hard refresh clears it).
@@ -167,7 +170,7 @@ tests/            node:test suite for the astronomy math
 node --test tests/*.mjs
 ```
 
-70 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
+71 tests cover Julian-day epochs, solstice/equinox declinations, the NREL SPA
 reference position, polar day/night, day-length symmetry, air mass and
 clear-sky insolation sanity checks, the scenic sky palette and hemisphere
 seasons, and the comparison schematic's geometry — including a cross-check
@@ -195,4 +198,4 @@ consistency check), that a panel aimed at the sun has zero incidence angle,
 sky view factor at its limits, terrain cutting the beam but not the diffuse,
 and that the orientation search lands near the latitude facing the equator —
 north of the equator, south of it, flat on it, and swung away from an
-obstruction.
+obstruction, plus bearing differences wrapping the short way round the compass.

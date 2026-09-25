@@ -275,6 +275,14 @@ export function dailyInsolation(lat, lon, date, tzOffset, stepMin = 10) {
   return wh / 1000;
 }
 
+/**
+ * Signed difference between two bearings, wrapped to [-180, 180).
+ * Going from 350 degrees to 10 is +20, not -340.
+ */
+export function bearingDelta(from, to) {
+  return ((((to - from) % 360) + 540) % 360) - 180;
+}
+
 /** Compass point ("SSE") for an azimuth in degrees. */
 export function compassPoint(azimuth) {
   const pts = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
