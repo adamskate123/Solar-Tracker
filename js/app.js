@@ -358,65 +358,73 @@ function signed(value, format) {
   return `${value >= 0 ? '+' : '\u2212'}${magnitude}`;
 }
 
-/**
- * Write date B's value beside date A's in a tile.
- * Pass value = null for "not applicable today" (polar day or night), which
- * shows a dash rather than a misleading number.
- */
-function setCompare(id, dateLabel, value, delta) {
-  const slot = $(`${id}-cmp`);
-  if (!slot) return;
-  if (!dateLabel) {
-    slot.hidden = true;
-    slot.textContent = '';
-    return;
-  }
-  slot.hidden = false;
-  slot.textContent = '';
-
+function dateLabel(parent, colorVar, text, delta) {
+  parent.textContent = '';
   const key = document.createElement('span');
-  key.className = 'tile-compare-key';
-  slot.appendChild(key);
-
-  const date = document.createElement('span');
-  date.className = 'tile-compare-date';
-  date.textContent = dateLabel;
-  slot.appendChild(date);
-
-  const val = document.createElement('span');
-  val.className = 'tile-compare-value';
-  val.textContent = value == null ? '—' : value;
-  slot.appendChild(val);
-
+  key.className = 'tile-key';
+  key.style.background = `var(${colorVar})`;
+  parent.appendChild(key);
+  parent.appendChild(document.createTextNode(text));
   if (delta) {
     const d = document.createElement('span');
-    d.className = `tile-compare-delta${delta.startsWith('\u00b1') ? ' is-zero' : ''}`;
+    d.className = `tile-delta${delta.startsWith('\u00b1') ? ' is-zero' : ''}`;
     d.textContent = delta;
-    slot.appendChild(d);
+    parent.appendChild(d);
   }
+}
+
+/**
+ * Put date B's value beside date A's in a tile, each under its own dated key.
+ * Pass value = null for "not applicable" (polar day or night) to show a dash
+ * rather than a misleading number; pass no dates to return to a single value.
+ */
+function setCompare(id, labelA, labelB, value, delta) {
+  const sideB = $(`${id}-cmp`);
+  const tagA = $(id)?.parentElement.querySelector('.tile-date-a');
+  if (!sideB || !tagA) return;
+  if (!labelB) {
+    sideB.hidden = true;
+    sideB.textContent = '';
+    tagA.hidden = true;
+    return;
+  }
+  tagA.hidden = false;
+  dateLabel(tagA, '--series-1', labelA);
+
+  sideB.hidden = false;
+  sideB.textContent = '';
+  const tagB = document.createElement('span');
+  tagB.className = 'tile-date';
+  dateLabel(tagB, '--series-b', labelB, delta);
+  const val = document.createElement('span');
+  val.className = 'tile-value';
+  val.textContent = value == null ? '—' : value;
+  sideB.appendChild(tagB);
+  sideB.appendChild(val);
 }
 
 /** Fill every tile's comparison line, or clear them all when not comparing. */
 function renderStatCompare(model) {
   const ids = ['stat-elevation', 'stat-azimuth', 'stat-max', 'stat-sunrise',
     'stat-sunset', 'stat-daylength', 'stat-ghi', 'stat-insolation'];
+  $('stat-tiles').classList.toggle('is-comparing', !!model.compare);
   if (!model.compare) {
-    for (const id of ids) setCompare(id, null);
+    for (const id of ids) setCompare(id, null, null);
     return;
   }
 
   const { dateB, info, insolation, now: nowB } = model.compare;
   const a = model.today;
+  const labelA = fmtDateShort(state.date);
   const label = fmtDateShort(dateB);
 
-  setCompare('stat-elevation', label, fmtDeg(nowB.apparentElevation),
+  setCompare('stat-elevation', labelA, label, fmtDeg(nowB.apparentElevation),
     signed(nowB.apparentElevation - model.now.apparentElevation, (v) => fmtDeg(v)));
 
-  setCompare('stat-azimuth', label,
-    `${fmtDeg(nowB.azimuth, 0)} ${compassPoint(nowB.azimuth)}`,
+  setCompare('stat-azimuth', labelA, label, fmtDeg(nowB.azimuth, 0),
     signed(bearingDelta(model.now.azimuth, nowB.azimuth), (v) => fmtDeg(v, 0)));
 
-  setCompare('stat-max', label, fmtDeg(info.noonElevation),
+  setCompare('stat-max', labelA, label, fmtDeg(info.noonElevation),
     signed(info.noonElevation - a.noonElevation, (v) => fmtDeg(v)));
 
   // Sunrise and sunset may not exist on either date; only difference two real times.
@@ -424,21 +432,21 @@ function renderStatCompare(model) {
     ? signed(info.sunrise - a.sunrise, (v) => fmtDuration(v)) : null;
   const setDelta = a.sunset != null && info.sunset != null
     ? signed(info.sunset - a.sunset, (v) => fmtDuration(v)) : null;
-  setCompare('stat-sunrise', label,
+  setCompare('stat-sunrise', labelA, label,
     info.sunrise == null ? null : fmtClock(info.sunrise), riseDelta);
-  setCompare('stat-sunset', label,
+  setCompare('stat-sunset', labelA, label,
     info.sunset == null ? null : fmtClock(info.sunset), setDelta);
 
-  setCompare('stat-daylength', label, fmtDuration(info.dayLength),
+  setCompare('stat-daylength', labelA, label, fmtDuration(info.dayLength),
     signed(info.dayLength - a.dayLength, (v) => fmtDuration(v)));
 
   const ghiA = clearSkyIrradiance(model.now.apparentElevation).ghi;
   const ghiB = clearSkyIrradiance(nowB.apparentElevation).ghi;
-  setCompare('stat-ghi', label, `${Math.round(ghiB)} W/m²`,
-    signed(ghiB - ghiA, (v) => `${Math.round(v)} W/m²`));
+  setCompare('stat-ghi', labelA, label, `${Math.round(ghiB)} W/m²`,
+    signed(ghiB - ghiA, (v) => `${Math.round(v)}`));  // unit is on the value beneath
 
-  setCompare('stat-insolation', label, `${insolation.toFixed(1)} kWh/m²`,
-    signed(insolation - model.insolationToday, (v) => `${v.toFixed(1)} kWh/m²`));
+  setCompare('stat-insolation', labelA, label, `${insolation.toFixed(1)} kWh/m²`,
+    signed(insolation - model.insolationToday, (v) => v.toFixed(1)));
 }
 
 function renderStats(model) {

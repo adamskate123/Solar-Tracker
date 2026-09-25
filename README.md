@@ -35,9 +35,10 @@ No accounts, no build step, no dependencies: open one HTML file and go.
   daylight, clear-sky energy and declination, and a to-scale orbit inset that
   shows why the 3% change in sun distance is *not* what makes the difference.
   The day charts and sky dome overlay both dates too, and **every stat tile at
-  the top gains a second line** carrying date B's value and the difference —
-  so the headline numbers compare at a glance without scrolling to the
-  schematic.
+  the top shows both dates side by side**, keyed with the same blue and red as
+  the charts and with the difference beside the second date — so the headline
+  numbers compare at a glance. Tiles go two-across while comparing (one on a
+  phone) so both values fit at full size.
 - **☀️ Solar panel modelling** — enter a tilt, a facing and an array size and
   get the annual clear-sky energy on that plane, computed by **Hay–Davies
   transposition** (direct beam by incidence angle, diffuse split into
@@ -115,7 +116,7 @@ from `file://` — if yours doesn't, use the one-liner above.
 
 ## Version badge
 
-The header shows the running version (currently `v1.7.0`); hovering it reveals
+The header shows the running version (currently `v1.8.0`); hovering it reveals
 the build date. Use it to confirm a deploy actually took effect — if the badge
 still shows the previous version, the browser or CDN is serving a cached build
 (GitHub Pages caches assets for roughly ten minutes; a hard refresh clears it).
