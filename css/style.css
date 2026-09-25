@@ -597,3 +597,28 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   stroke-width: 1;
   stroke-opacity: 0.8;
 }
+
+/* Comparison line inside a stat tile, shown only while comparing two dates. */
+.tile-compare {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.tile-compare-key {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--series-b);
+  flex: none;
+  align-self: center;
+}
+.tile-compare-value { color: var(--text-primary); font-weight: 600; }
+.tile-compare-delta { color: var(--muted); }
+.tile-compare-delta.is-zero { font-style: italic; }

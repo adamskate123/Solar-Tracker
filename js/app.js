@@ -7,6 +7,7 @@ import {
   dailyInsolation,
   airMass,
   compassPoint,
+  bearingDelta,
   daysInMonth,
 } from './solar.js';
 import { renderLineChart, renderSkyDome } from './charts.js';
@@ -86,7 +87,8 @@ const fmtClock = (min) => {
   return `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
 };
 const fmtDuration = (min) => `${Math.floor(min / 60)}h ${pad2(Math.round(min) % 60)}m`;
-const fmtDeg = (v, digits = 1) => `${v.toFixed(digits)}°`;
+// U+2212, so a negative value matches the minus used in the deltas beside it.
+const fmtDeg = (v, digits = 1) => `${v.toFixed(digits).replace('-', '\u2212')}°`;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function doyToDate(year, doy) {
@@ -325,6 +327,7 @@ function computeModel() {
       samples: sampleDay(dateB),
       info: dayInfo(lat, lon, dateB, tz),
       insolation: dailyInsolation(lat, lon, dateB, tz),
+      now: sunPosition(lat, lon, dateB, minutes, tz),
     };
   }
 
@@ -346,7 +349,100 @@ function setStat(id, value, sub) {
   $(`${id}-sub`).textContent = sub || '';
 }
 
+/** "+1h 51m" / "−3.4°" — an explicit sign, and a real minus rather than a hyphen. */
+function signed(value, format) {
+  if (value == null || !Number.isFinite(value)) return null;
+  const magnitude = format(Math.abs(value));
+  // "+0.0°" and "-0.0°" both mean the same thing; say so instead.
+  if (/^[^\d]*0+([.,]0+)?[^\d]*$/.test(magnitude)) return `±${magnitude}`;
+  return `${value >= 0 ? '+' : '\u2212'}${magnitude}`;
+}
+
+/**
+ * Write date B's value beside date A's in a tile.
+ * Pass value = null for "not applicable today" (polar day or night), which
+ * shows a dash rather than a misleading number.
+ */
+function setCompare(id, dateLabel, value, delta) {
+  const slot = $(`${id}-cmp`);
+  if (!slot) return;
+  if (!dateLabel) {
+    slot.hidden = true;
+    slot.textContent = '';
+    return;
+  }
+  slot.hidden = false;
+  slot.textContent = '';
+
+  const key = document.createElement('span');
+  key.className = 'tile-compare-key';
+  slot.appendChild(key);
+
+  const date = document.createElement('span');
+  date.className = 'tile-compare-date';
+  date.textContent = dateLabel;
+  slot.appendChild(date);
+
+  const val = document.createElement('span');
+  val.className = 'tile-compare-value';
+  val.textContent = value == null ? '—' : value;
+  slot.appendChild(val);
+
+  if (delta) {
+    const d = document.createElement('span');
+    d.className = `tile-compare-delta${delta.startsWith('\u00b1') ? ' is-zero' : ''}`;
+    d.textContent = delta;
+    slot.appendChild(d);
+  }
+}
+
+/** Fill every tile's comparison line, or clear them all when not comparing. */
+function renderStatCompare(model) {
+  const ids = ['stat-elevation', 'stat-azimuth', 'stat-max', 'stat-sunrise',
+    'stat-sunset', 'stat-daylength', 'stat-ghi', 'stat-insolation'];
+  if (!model.compare) {
+    for (const id of ids) setCompare(id, null);
+    return;
+  }
+
+  const { dateB, info, insolation, now: nowB } = model.compare;
+  const a = model.today;
+  const label = fmtDateShort(dateB);
+
+  setCompare('stat-elevation', label, fmtDeg(nowB.apparentElevation),
+    signed(nowB.apparentElevation - model.now.apparentElevation, (v) => fmtDeg(v)));
+
+  setCompare('stat-azimuth', label,
+    `${fmtDeg(nowB.azimuth, 0)} ${compassPoint(nowB.azimuth)}`,
+    signed(bearingDelta(model.now.azimuth, nowB.azimuth), (v) => fmtDeg(v, 0)));
+
+  setCompare('stat-max', label, fmtDeg(info.noonElevation),
+    signed(info.noonElevation - a.noonElevation, (v) => fmtDeg(v)));
+
+  // Sunrise and sunset may not exist on either date; only difference two real times.
+  const riseDelta = a.sunrise != null && info.sunrise != null
+    ? signed(info.sunrise - a.sunrise, (v) => fmtDuration(v)) : null;
+  const setDelta = a.sunset != null && info.sunset != null
+    ? signed(info.sunset - a.sunset, (v) => fmtDuration(v)) : null;
+  setCompare('stat-sunrise', label,
+    info.sunrise == null ? null : fmtClock(info.sunrise), riseDelta);
+  setCompare('stat-sunset', label,
+    info.sunset == null ? null : fmtClock(info.sunset), setDelta);
+
+  setCompare('stat-daylength', label, fmtDuration(info.dayLength),
+    signed(info.dayLength - a.dayLength, (v) => fmtDuration(v)));
+
+  const ghiA = clearSkyIrradiance(model.now.apparentElevation).ghi;
+  const ghiB = clearSkyIrradiance(nowB.apparentElevation).ghi;
+  setCompare('stat-ghi', label, `${Math.round(ghiB)} W/m²`,
+    signed(ghiB - ghiA, (v) => `${Math.round(v)} W/m²`));
+
+  setCompare('stat-insolation', label, `${insolation.toFixed(1)} kWh/m²`,
+    signed(insolation - model.insolationToday, (v) => `${v.toFixed(1)} kWh/m²`));
+}
+
 function renderStats(model) {
+  renderStatCompare(model);
   const { now, today } = model;
   const up = now.apparentElevation > -0.833;
 

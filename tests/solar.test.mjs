@@ -8,6 +8,7 @@ import {
   clearSkyIrradiance,
   dailyInsolation,
   compassPoint,
+  bearingDelta,
   elevationTimes,
   dayLightPhases,
   UVB_ELEVATION,
@@ -176,4 +177,14 @@ test('dayLightPhases returns every named phase', () => {
     assert.ok(phases[key], `missing ${key}`);
     assert.ok(['crosses', 'always-above', 'never-reaches'].includes(phases[key].state));
   }
+});
+
+test('bearing differences wrap the short way round the compass', () => {
+  assert.equal(bearingDelta(10, 40), 30);
+  assert.equal(bearingDelta(40, 10), -30);
+  assert.equal(bearingDelta(350, 10), 20, 'crossing north forwards');
+  assert.equal(bearingDelta(10, 350), -20, 'crossing north backwards');
+  assert.equal(bearingDelta(90, 90), 0);
+  // Exactly opposite resolves to one side rather than flickering.
+  assert.equal(Math.abs(bearingDelta(0, 180)), 180);
 });
