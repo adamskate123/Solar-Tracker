@@ -8,5 +8,5 @@
  *
  * Bump VERSION and BUILD_DATE together when releasing.
  */
-export const VERSION = '1.7.0';
+export const VERSION = '1.8.0';
 export const BUILD_DATE = '2026-09-25';

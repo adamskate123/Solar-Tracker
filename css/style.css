@@ -598,27 +598,35 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   stroke-opacity: 0.8;
 }
 
-/* Comparison line inside a stat tile, shown only while comparing two dates. */
-.tile-compare {
+/* While comparing, each tile shows both dates side by side, keyed with the
+   same blue (date A) and red (date B) the charts use. */
+.tile-values {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 6px;
-  margin-top: 5px;
-  padding-top: 5px;
-  border-top: 1px solid var(--border);
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
+  align-items: flex-end;
+  gap: 4px 16px;
+}
+.tile-side { display: flex; flex-direction: column; min-width: 0; }
+.tile-date {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
   color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.tile-compare-key {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  background: var(--series-b);
-  flex: none;
-  align-self: center;
+.tile-key { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.tile-delta { color: var(--muted); }
+.tile-delta.is-zero { font-style: italic; }
+/* The hero tile's blue belongs to date A — the same blue as its key — so date B
+   stays neutral rather than borrowing A's colour. */
+.tile-hero .tile-side-b .tile-value { color: var(--text-primary); }
+
+/* Two dates need room. Four across leaves ~250px per tile, and a pair like
+   "8.6 kWh/m²  2.1 kWh/m²" needs more, so comparing uses two columns (one on
+   phones) and keeps the values at their normal size rather than shrinking them. */
+.tiles.is-comparing { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 600px) {
+  .tiles.is-comparing { grid-template-columns: 1fr; }
 }
-.tile-compare-value { color: var(--text-primary); font-weight: 600; }
-.tile-compare-delta { color: var(--muted); }
-.tile-compare-delta.is-zero { font-style: italic; }
